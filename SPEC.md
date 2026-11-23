@@ -53,7 +53,7 @@ The config file MUST be TOML with the following keys:
 ### 2.3. Base URL
 
 - For `ollama`, `base_url` is the server root, for example `http://localhost:11434`.
-- For `llamacpp` and `openai-compatible`, `base_url` is the OpenAI-style API root including the version segment, for example `http://localhost:8080/v1` or `https://api.openai.com/v1`.
+- For `llamacpp` and `openai-compatible`, `base_url` is the OpenAI-style API root including the version segment, for example `http://localhost:9931/v1` or `https://api.openai.com/v1`.
 
 ### 2.4. Permissions
 
@@ -94,7 +94,7 @@ Prompts MUST appear in this order:
 
 1. **Overwrite confirmation.** Shown only when a config file exists.
 2. **Platform.** One of `ollama`, `llamacpp`, `openai-compatible`.
-3. **Base URL.** The default is `http://localhost:11434` for `ollama` and `http://localhost:8080/v1` for `llamacpp`. No default is offered for `openai-compatible`, and a value MUST be entered.
+3. **Base URL.** The default is `http://localhost:11434` for `ollama` and `http://localhost:9931/v1` for `llamacpp`. No default is offered for `openai-compatible`, and a value MUST be entered.
 4. **API key.** Shown only for `openai-compatible`. MAY be left blank.
 5. **Model.** See Section 3.4.
 

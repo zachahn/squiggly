@@ -19,7 +19,7 @@ var ErrNotTerminal = errors.New("editor init is interactive and requires stdin t
 
 var defaultBaseURLs = map[string]string{
 	config.PlatformOllama:   "http://localhost:11434",
-	config.PlatformLlamaCpp: "http://localhost:8080/v1",
+	config.PlatformLlamaCpp: "http://localhost:9931/v1",
 }
 
 type Options struct {
