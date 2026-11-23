@@ -6,15 +6,12 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 `editor` is a command-line program written in Go. Text is rewritten by an LLM, and the program is exposed to MCP clients as an MCP server over stdio.
 
-Rewriting is performed by an agent loop. The agent is given a sandboxed set of file tools scoped to a single session. Session files are stored in a SQLite database. The original text is stored as `ORIGINAL.txt`, and the rewrite is produced in `CURRENT.txt`. A session is started with the original text and MAY be revised any number of times with feedback.
-
-Every tool call received by the MCP server is recorded in the database, together with the result and the full transcript of the agent run, including model reasoning and text replies (Section 9).
+Rewriting is performed by an agent loop. The agent is given a sandboxed set of file tools scoped to a per-session state directory. The original text is stored as `ORIGINAL.txt`, and the rewrite is produced in `CURRENT.txt`. A session is started with the original text and MAY be revised any number of times with feedback.
 
 The program MUST be built with:
 
 - `github.com/mark3labs/mcp-go` for the MCP server.
 - `github.com/cloudwego/eino` for the agent loop, with chat model components from `github.com/cloudwego/eino-ext`. The choice between eino agent APIs (for example, the ADK `ChatModelAgent` or `flow/agent/react`) is left to the implementation.
-- `modernc.org/sqlite` for the database, through `database/sql`.
 
 ### 1.1. Commands
 
@@ -126,8 +123,6 @@ The config MUST be read once at startup and MUST NOT be read again during the li
 
 When the config file is missing or invalid (unparseable, unknown `platform`, empty `base_url`, empty `model`, empty `system_prompt`, `max_steps` below 1, or `request_timeout_seconds` below 1), the process MUST exit with a non-zero status and an error message on stderr that suggests running `editor init`.
 
-After the config is loaded, the database MUST be opened and migrated as described in Section 6.2. When the database cannot be opened or migrated, the process MUST exit with a non-zero status and an error message on stderr.
-
 The server MUST communicate over stdio only.
 
 ### 4.2. Tool: `start_rewrite`
@@ -140,9 +135,9 @@ The server MUST communicate over stdio only.
 
 **Behavior:**
 
-1. A request row is recorded with status `running` (Section 9.2).
-2. An agent run is performed (Section 5) with the config's `system_prompt` and the first user message `Rewrite CURRENT.txt.` The overlay starts with `ORIGINAL.txt` and `CURRENT.txt` both set to `text`. No session row exists during the run.
-3. On success, the session is created and the overlay is committed in one transaction (Section 7.3). The session ID is generated as described in Section 6.3.
+1. A session ID is generated as described in Section 6.2.
+2. The session directory is created with `ORIGINAL.txt` set to `text`, `CURRENT.txt` set to `text`, and `SYSTEM.txt` set to the config's `system_prompt`.
+3. An agent run is performed (Section 5) with the first user message `Rewrite CURRENT.txt.`
 4. On success, the result MUST be a single text content block:
 
    ```
@@ -151,7 +146,7 @@ The server MUST communicate over stdio only.
    <contents of CURRENT.txt>
    ```
 
-5. On failure, no session is created and no session ID is returned. The request row and transcript MUST still be recorded, with a NULL `session_id`.
+5. On failure, the session directory MUST be deleted, and no session ID is returned.
 
 ### 4.3. Tool: `revise_rewrite`
 
@@ -164,10 +159,9 @@ The server MUST communicate over stdio only.
 
 **Behavior:**
 
-1. `session_id` is validated against `\A[0-9a-f]{8}\z` before the session is looked up.
-2. The session is located as described in Section 6.4. When no session is found, a tool error MUST be returned.
-3. A request row is recorded with status `running` (Section 9.2).
-4. An agent run is performed (Section 5) with the session's `system_prompt` and the user message:
+1. `session_id` is validated against `\A[0-9a-f]{8}\z` before any filesystem access.
+2. The session directory is located as described in Section 6.3. When no directory is found, a tool error MUST be returned.
+3. An agent run is performed (Section 5) with the system prompt read from the session's `SYSTEM.txt` and the user message:
 
    ```
    Feedback on CURRENT.txt:
@@ -175,7 +169,7 @@ The server MUST communicate over stdio only.
    <feedback>
    ```
 
-5. On success, the overlay is committed (Section 7.3), and the result MUST be a single text content block containing only the contents of `CURRENT.txt`.
+4. On success, the result MUST be a single text content block containing only the contents of `CURRENT.txt`.
 
 ### 4.4. Errors
 
@@ -186,14 +180,10 @@ All failures MUST be returned as MCP tool errors (`isError: true`) with a readab
 - An unreachable platform, a non-2xx response, or a model request that exceeds `request_timeout_seconds`.
 - An agent run that exceeds `max_steps`.
 - An agent run that ends with an empty `CURRENT.txt`.
-- A version conflict at commit (Section 4.5).
-- A database read or write failure.
 
 ### 4.5. Concurrency
 
 Calls on the same session MUST be serialized by a per-session mutex held within the `editor mcp` process. A second call on a busy session MUST wait until the first finishes. Calls on different sessions MAY run in parallel.
-
-Several `editor mcp` processes MAY share the database. Calls on the same session from different processes are not serialized. Instead, the session `version` read at the start of a run MUST be compared at commit (Section 7.3). When the version has changed, the commit MUST be refused, nothing is written to `files`, and a tool error MUST be returned stating that the session was revised by another process during the run.
 
 ## 5. Agent Run
 
@@ -229,11 +219,11 @@ Rewrite the text for clarity and concision. Preserve the meaning, tone, and any 
 </example>
 ```
 
-The session's `system_prompt` is stored once when the session is created and MUST be used for every revision of the session, so later edits to the config's `system_prompt` do not affect existing sessions. The platform, base URL, API key, model, `max_steps`, and `request_timeout_seconds` MUST come from the config loaded at startup.
+`SYSTEM.txt` is written once at `start_rewrite` and MUST be used for every revision of the session, so later edits to the config's `system_prompt` do not affect existing sessions. The platform, base URL, API key, model, `max_steps`, and `request_timeout_seconds` MUST come from the config loaded at startup.
 
 ### 5.2. Conversation State
 
-Each call MUST start a fresh agent run. Transcripts are recorded for inspection (Section 9) and MUST NOT be replayed into later runs. Session state is held only in the session files.
+Each call MUST start a fresh agent run. No message history is stored or replayed across calls. Session state is held only in the session files.
 
 ### 5.3. Step Limit
 
@@ -243,92 +233,36 @@ A run MUST be limited to `max_steps` steps. A run that reaches the limit without
 
 Each model request MUST time out after `request_timeout_seconds` seconds. For `openai-compatible`, requests MUST include `Authorization: Bearer <api_key>` when `api_key` is non-empty.
 
-The agent's final text reply MUST NOT be returned to the MCP client. The reply is recorded in the transcript (Section 9.3).
+The agent's final text reply MUST be discarded.
 
 ## 6. Sessions
 
-### 6.1. Database Location
+### 6.1. Location
 
-All state MUST be stored in a single SQLite database at `$XDG_STATE_HOME/editor/editor.db`. When `XDG_STATE_HOME` is unset or empty, `~/.local/state/editor/editor.db` MUST be used.
+Sessions MUST be stored under `$XDG_STATE_HOME/editor/sessions/`. When `XDG_STATE_HOME` is unset or empty, `~/.local/state/editor/sessions/` MUST be used.
 
-The directory MUST be created with mode `0700` when absent. The database file MUST have mode `0600`, because session text is stored in it.
+Each session is a directory named `<id>-<unixtime>`, where `<unixtime>` is the session creation time in Unix seconds. Session directories MUST be created with mode `0700` and session files with mode `0600`.
 
-Each connection MUST enable `journal_mode=WAL`, `foreign_keys=ON`, and a `busy_timeout` of at least 5000 milliseconds.
+### 6.2. ID Generation
 
-All timestamps MUST be stored as integer Unix milliseconds.
+A session ID MUST be 8 lowercase hexadecimal characters generated from `crypto/rand`. When any entry matching `<id>-*` already exists in the sessions directory, a new ID MUST be generated.
 
-### 6.2. Schema
+The unixtime MUST NOT be included in any tool result. Only the ID is exposed to MCP clients.
 
-The schema version MUST be tracked with `PRAGMA user_version`. On open, each migration above the stored version MUST be applied in order, each in its own transaction that also sets `user_version`.
+### 6.3. Lookup
 
-```sql
-CREATE TABLE sessions (
-  id            TEXT PRIMARY KEY,
-  created_at    INTEGER NOT NULL,
-  system_prompt TEXT NOT NULL,
-  version       INTEGER NOT NULL
-);
+A session is located by matching `<id>-*` in the sessions directory. When no entry matches, the session is unknown.
 
-CREATE TABLE files (
-  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  name       TEXT NOT NULL,
-  content    TEXT NOT NULL,
-  PRIMARY KEY (session_id, name)
-);
-
-CREATE TABLE requests (
-  id          INTEGER PRIMARY KEY,
-  session_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,
-  tool        TEXT NOT NULL,
-  arguments   TEXT NOT NULL,
-  before      TEXT,
-  output      TEXT,
-  status      TEXT NOT NULL,
-  error       TEXT,
-  platform    TEXT NOT NULL,
-  model       TEXT NOT NULL,
-  steps       INTEGER,
-  started_at  INTEGER NOT NULL,
-  duration_ms INTEGER
-);
-
-CREATE TABLE messages (
-  request_id   INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
-  seq          INTEGER NOT NULL,
-  role         TEXT NOT NULL,
-  content      TEXT NOT NULL,
-  reasoning    TEXT NOT NULL,
-  tool_calls   TEXT,
-  tool_call_id TEXT,
-  tool_name    TEXT,
-  PRIMARY KEY (request_id, seq)
-);
-
-CREATE INDEX requests_session_id ON requests(session_id);
-CREATE INDEX requests_started_at ON requests(started_at);
-```
-
-### 6.3. ID Generation
-
-A session ID MUST be 8 lowercase hexadecimal characters generated from `crypto/rand`. When the insert into `sessions` fails on the primary key, a new ID MUST be generated and the insert retried within the same transaction.
-
-Only the ID is exposed to MCP clients.
-
-### 6.4. Lookup
-
-A session is located by its `id` in `sessions`. When no row matches, the session is unknown.
-
-### 6.5. Files
+### 6.4. Files
 
 | File | Written by | Agent access |
 | --- | --- | --- |
 | `ORIGINAL.txt` | `start_rewrite` | read |
 | `CURRENT.txt` | `start_rewrite`, agent | read, write |
+| `SYSTEM.txt` | `start_rewrite` | none |
 | `SCRATCH-<n>.txt` | agent | create, read, write |
 
-Files are stored as rows in `files`. The session's system prompt is stored in `sessions.system_prompt` and is not accessible to the agent.
-
-### 6.6. Retention
+### 6.5. Retention
 
 Sessions MUST NOT be deleted automatically. Sessions are deleted only by `editor prune` (Section 8).
 
@@ -342,24 +276,17 @@ Every agent tool that accepts a file name MUST check the name against the allowl
 \A(ORIGINAL\.txt|CURRENT\.txt|SCRATCH-[0-9]+\.txt)\z
 ```
 
-Names are matched as bare file names and MUST NOT be resolved as paths. No tool provides access outside the session's files, and no tool executes commands.
+Names are matched as bare file names and MUST NOT be resolved as paths. No tool provides access outside the session directory, and no tool executes commands.
 
 A tool failure, including a disallowed name, MUST be returned to the agent as an error tool result and MUST NOT fail the run.
 
 ### 7.2. Overlay
 
-At the start of a run, the session's files and `version` MUST be read in one transaction and held in memory as the base snapshot. No database transaction is held open during the run.
-
-During a run, all writes MUST be held in an in-memory overlay. `read_file`, `grep`, and `list_files` MUST read from the overlay first and fall back to the base snapshot. The database MUST NOT be modified by agent tools during a run.
+During a run, all writes MUST be held in an in-memory overlay. `read_file`, `grep`, and `list_files` MUST read from the overlay first and fall back to disk. Files on disk MUST NOT be modified during a run.
 
 ### 7.3. Commit
 
-When a run succeeds, one transaction MUST:
-
-1. For `start_rewrite`, insert the session row with `version` 1, and insert `ORIGINAL.txt`.
-2. For `revise_rewrite`, increment `version` with `UPDATE sessions SET version = version + 1 WHERE id = ? AND version = ?`. When no row is updated, the transaction MUST be rolled back and a version conflict reported (Section 4.5).
-3. Upsert each file changed in the overlay into `files`.
-4. Complete the request row and insert the transcript (Section 9).
+When a run succeeds, each file changed in the overlay MUST be written to `<name>.tmp` in the session directory and then renamed over `<name>`. `SCRATCH-<n>.txt` files MUST be committed before `CURRENT.txt`.
 
 When a run fails, the overlay MUST be discarded.
 
@@ -397,67 +324,6 @@ The duration MUST accept Go `time.ParseDuration` syntax plus a `d` suffix for da
 
 ### 8.2. Behavior
 
-When the database file does not exist, a count of 0 MUST be printed and the database MUST NOT be created. Otherwise, the database is opened and migrated as described in Section 6.2.
+Session age MUST be computed from the `<unixtime>` in the directory name. Every session directory older than the duration MUST be deleted. Entries that do not match `\A[0-9a-f]{8}-[0-9]+\z` MUST be ignored.
 
-Session age MUST be computed from `sessions.created_at`. In one transaction:
-
-1. Every session older than the duration MUST be deleted. Its files, requests, and messages are deleted by cascade.
-2. Every request with a NULL `session_id` and a `started_at` older than the duration MUST be deleted, together with its messages.
-
-The ID of each deleted session MUST be printed, one per line, followed by the total count of deleted sessions.
-
-## 9. Request Log
-
-### 9.1. Scope
-
-Every `start_rewrite` and `revise_rewrite` call MUST be recorded in `requests`, including failed calls.
-
-A call rejected before an agent run, because of a parameter validation failure or an unknown session ID, MUST be recorded as one completed row with status `error`, a NULL `session_id`, a NULL `steps`, and no transcript.
-
-### 9.2. Request Rows
-
-The row for a call that reaches an agent run MUST be inserted with status `running` before the run, in its own transaction, and completed after the run.
-
-| Column | Value |
-| --- | --- |
-| `session_id` | The session ID for `revise_rewrite` on an existing session. For `start_rewrite`, set to the new ID in the commit transaction. NULL otherwise. |
-| `tool` | `start_rewrite` or `revise_rewrite`. |
-| `arguments` | The tool arguments as received, encoded as JSON. |
-| `before` | For `revise_rewrite`, `CURRENT.txt` from the base snapshot. NULL for `start_rewrite`. |
-| `output` | `CURRENT.txt` on success. NULL otherwise. |
-| `status` | `running`, `ok`, or `error`. |
-| `error` | The tool error message when `status` is `error`. NULL otherwise. |
-| `platform`, `model` | From the config loaded at startup. |
-| `steps` | The number of model responses in the run. |
-| `started_at` | When the call was received. |
-| `duration_ms` | Milliseconds from `started_at` to completion. NULL while `running`. |
-
-On success, the row MUST be completed in the commit transaction (Section 7.3). On failure, the row MUST be completed and the transcript inserted in one transaction. When recording a failure itself fails, the tool error MUST include both the original error and the recording error.
-
-A row left in `running` indicates that the process exited before the call completed. Such rows MUST NOT be modified by other processes.
-
-### 9.3. Transcript
-
-Every message of the agent run MUST be recorded in `messages` in order, with `seq` starting at 0. The transcript includes the system message, the user message, every assistant message, and every tool result. Messages produced before a failure, such as a run that exceeds `max_steps` or a failed model request, MUST be recorded.
-
-| Column | Value |
-| --- | --- |
-| `role` | `system`, `user`, `assistant`, or `tool`. |
-| `content` | The message text. An empty string when there is no text. |
-| `reasoning` | The model reasoning returned by the platform. An empty string when none is returned. |
-| `tool_calls` | For assistant messages with tool calls, a JSON array of objects with `id`, `name`, and `arguments`. NULL otherwise. |
-| `tool_call_id`, `tool_name` | For tool results, the ID and name of the tool call being answered. NULL otherwise. |
-
-Reasoning is available only when returned by the platform, for example `reasoning_content` from `llama-server`, `reasoning` from OpenRouter, or `thinking` from Ollama.
-
-### 9.4. Inspection
-
-No command is provided for reading the log. The database is read with the `sqlite3` CLI, for example:
-
-```sql
-SELECT id, session_id, tool, status, steps, duration_ms, error
-FROM requests ORDER BY started_at DESC LIMIT 20;
-
-SELECT seq, role, reasoning, content, tool_calls
-FROM messages WHERE request_id = ? ORDER BY seq;
-```
+The ID of each deleted session MUST be printed, one per line, followed by the total count. When the sessions directory does not exist, a count of 0 MUST be printed.
