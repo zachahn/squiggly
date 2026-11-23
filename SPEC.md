@@ -152,12 +152,12 @@ The server MUST communicate over stdio only.
 
 | Name | Type | Required | Constraint |
 | --- | --- | --- | --- |
-| `session_id` | string | yes | MUST match `^[0-9a-f]{8}$`. |
+| `session_id` | string | yes | MUST match `\A[0-9a-f]{8}\z`. |
 | `feedback` | string | yes | MUST NOT be empty. |
 
 **Behavior:**
 
-1. `session_id` is validated against `^[0-9a-f]{8}$` before any filesystem access.
+1. `session_id` is validated against `\A[0-9a-f]{8}\z` before any filesystem access.
 2. The session directory is located as described in Section 6.3. When no directory is found, a tool error MUST be returned.
 3. An agent run is performed (Section 5) with the system prompt read from the session's `SYSTEM.txt` and the user message:
 
@@ -258,7 +258,7 @@ Sessions MUST NOT be deleted automatically. Sessions are deleted only by `editor
 Every agent tool that accepts a file name MUST check the name against the allowlist:
 
 ```
-^(ORIGINAL\.txt|CURRENT\.txt|SCRATCH-[0-9]+\.txt)$
+\A(ORIGINAL\.txt|CURRENT\.txt|SCRATCH-[0-9]+\.txt)\z
 ```
 
 Names are matched as bare file names and MUST NOT be resolved as paths. No tool provides access outside the session directory, and no tool executes commands.
@@ -309,6 +309,6 @@ The duration MUST accept Go `time.ParseDuration` syntax plus a `d` suffix for da
 
 ### 8.2. Behavior
 
-Session age MUST be computed from the `<unixtime>` in the directory name. Every session directory older than the duration MUST be deleted. Entries that do not match `^[0-9a-f]{8}-[0-9]+$` MUST be ignored.
+Session age MUST be computed from the `<unixtime>` in the directory name. Every session directory older than the duration MUST be deleted. Entries that do not match `\A[0-9a-f]{8}-[0-9]+\z` MUST be ignored.
 
 The ID of each deleted session MUST be printed, one per line, followed by the total count. When the sessions directory does not exist, a count of 0 MUST be printed.
