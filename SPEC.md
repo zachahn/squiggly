@@ -49,6 +49,7 @@ The config file MUST be TOML with the following keys:
 | `model` | string | yes | Model identifier sent to the platform. |
 | `system_prompt` | string | yes | Rewriting instructions. See Section 5.1. |
 | `max_steps` | integer | no | Maximum agent steps per run. MUST be at least 1. Defaults to 25 when absent. |
+| `request_timeout_seconds` | integer | no | Timeout for each model request, in seconds. MUST be at least 1. Defaults to 600 when absent. |
 
 ### 2.3. Base URL
 
@@ -67,6 +68,7 @@ base_url = "https://openrouter.ai/api/v1"
 api_key = "sk-or-..."
 model = "anthropic/claude-sonnet-5.5"
 max_steps = 25
+request_timeout_seconds = 600
 system_prompt = """
 Rewrite the text for clarity and concision. Preserve the meaning, tone, and any technical details. Do not add new information.
 """
@@ -84,7 +86,7 @@ When a config file already exists:
 
 1. The user MUST be asked to confirm overwriting the file.
 2. When the user declines, the command MUST exit with status 0 and the file MUST be left unchanged.
-3. When the user confirms, each subsequent prompt MUST be pre-filled with the value from the existing file. `system_prompt` and `max_steps` MUST be preserved from the existing file without prompting.
+3. When the user confirms, each subsequent prompt MUST be pre-filled with the value from the existing file. `system_prompt`, `max_steps`, and `request_timeout_seconds` MUST be preserved from the existing file without prompting.
 
 When the existing file cannot be parsed, the user MUST still be asked to confirm overwriting it, and prompts MUST fall back to the defaults in Section 3.3.
 
@@ -111,7 +113,7 @@ When the request fails or returns no models, the reason MUST be printed and the 
 
 ### 3.5. Writing
 
-After all prompts are answered, the config file MUST be written as described in Section 2. For a new config, `system_prompt` MUST be set to the default in Section 5.1 and `max_steps` MUST be set to 25. The path of the written file MUST be printed.
+After all prompts are answered, the config file MUST be written as described in Section 2. For a new config, `system_prompt` MUST be set to the default in Section 5.1, `max_steps` MUST be set to 25, and `request_timeout_seconds` MUST be set to 600. The path of the written file MUST be printed.
 
 ## 4. `editor mcp`
 
@@ -119,7 +121,7 @@ After all prompts are answered, the config file MUST be written as described in 
 
 The config MUST be read once at startup and MUST NOT be read again during the life of the process. Edits to the config file take effect only after the server is restarted.
 
-When the config file is missing or invalid (unparseable, unknown `platform`, empty `base_url`, empty `model`, empty `system_prompt`, or `max_steps` below 1), the process MUST exit with a non-zero status and an error message on stderr that suggests running `editor init`.
+When the config file is missing or invalid (unparseable, unknown `platform`, empty `base_url`, empty `model`, empty `system_prompt`, `max_steps` below 1, or `request_timeout_seconds` below 1), the process MUST exit with a non-zero status and an error message on stderr that suggests running `editor init`.
 
 The server MUST communicate over stdio only.
 
@@ -175,7 +177,7 @@ All failures MUST be returned as MCP tool errors (`isError: true`) with a readab
 
 - Parameter validation failures.
 - An unknown session ID.
-- An unreachable platform, a non-2xx response, or a model request that exceeds the 120-second timeout.
+- An unreachable platform, a non-2xx response, or a model request that exceeds `request_timeout_seconds`.
 - An agent run that exceeds `max_steps`.
 - An agent run that ends with an empty `CURRENT.txt`.
 
@@ -217,7 +219,7 @@ Rewrite the text for clarity and concision. Preserve the meaning, tone, and any 
 </example>
 ```
 
-`SYSTEM.txt` is written once at `start_rewrite` and MUST be used for every revision of the session, so later edits to the config's `system_prompt` do not affect existing sessions. The platform, base URL, API key, model, and `max_steps` MUST come from the config loaded at startup.
+`SYSTEM.txt` is written once at `start_rewrite` and MUST be used for every revision of the session, so later edits to the config's `system_prompt` do not affect existing sessions. The platform, base URL, API key, model, `max_steps`, and `request_timeout_seconds` MUST come from the config loaded at startup.
 
 ### 5.2. Conversation State
 
@@ -229,7 +231,7 @@ A run MUST be limited to `max_steps` steps. A run that reaches the limit without
 
 ### 5.4. Model Requests
 
-Each model request MUST time out after 120 seconds. For `openai-compatible`, requests MUST include `Authorization: Bearer <api_key>` when `api_key` is non-empty.
+Each model request MUST time out after `request_timeout_seconds` seconds. For `openai-compatible`, requests MUST include `Authorization: Bearer <api_key>` when `api_key` is non-empty.
 
 The agent's final text reply MUST be discarded.
 

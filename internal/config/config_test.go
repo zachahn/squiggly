@@ -22,12 +22,13 @@ func TestPathUsesXDGConfigHome(t *testing.T) {
 func TestWriteAndLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "editor", "config.toml")
 	cfg := &Config{
-		Platform:     PlatformOpenAICompatible,
-		BaseURL:      "https://example.com/v1",
-		APIKey:       "secret",
-		Model:        "m",
-		MaxSteps:     25,
-		SystemPrompt: DefaultSystemPrompt,
+		Platform:              PlatformOpenAICompatible,
+		BaseURL:               "https://example.com/v1",
+		APIKey:                "secret",
+		Model:                 "m",
+		MaxSteps:              25,
+		RequestTimeoutSeconds: 900,
+		SystemPrompt:          DefaultSystemPrompt,
 	}
 	if err := Write(path, cfg); err != nil {
 		t.Fatal(err)
@@ -50,13 +51,16 @@ func TestWriteAndLoadRoundTrip(t *testing.T) {
 	}
 }
 
-func TestParseDefaultsMaxSteps(t *testing.T) {
+func TestParseDefaultsMaxStepsAndRequestTimeout(t *testing.T) {
 	cfg, err := Parse([]byte("platform = \"ollama\"\nbase_url = \"http://x\"\nmodel = \"m\"\nsystem_prompt = \"p\"\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.MaxSteps != 25 {
 		t.Fatalf("MaxSteps = %d", cfg.MaxSteps)
+	}
+	if cfg.RequestTimeoutSeconds != 600 {
+		t.Fatalf("RequestTimeoutSeconds = %d", cfg.RequestTimeoutSeconds)
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
@@ -65,11 +69,12 @@ func TestParseDefaultsMaxSteps(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	cases := map[string]string{
-		"platform":      "platform = \"other\"\nbase_url = \"u\"\nmodel = \"m\"\nsystem_prompt = \"p\"\n",
-		"base_url":      "platform = \"ollama\"\nmodel = \"m\"\nsystem_prompt = \"p\"\n",
-		"model":         "platform = \"ollama\"\nbase_url = \"u\"\nsystem_prompt = \"p\"\n",
-		"system_prompt": "platform = \"ollama\"\nbase_url = \"u\"\nmodel = \"m\"\n",
-		"max_steps":     "platform = \"ollama\"\nbase_url = \"u\"\nmodel = \"m\"\nsystem_prompt = \"p\"\nmax_steps = 0\n",
+		"platform":                "platform = \"other\"\nbase_url = \"u\"\nmodel = \"m\"\nsystem_prompt = \"p\"\n",
+		"base_url":                "platform = \"ollama\"\nmodel = \"m\"\nsystem_prompt = \"p\"\n",
+		"model":                   "platform = \"ollama\"\nbase_url = \"u\"\nsystem_prompt = \"p\"\n",
+		"system_prompt":           "platform = \"ollama\"\nbase_url = \"u\"\nmodel = \"m\"\n",
+		"max_steps":               "platform = \"ollama\"\nbase_url = \"u\"\nmodel = \"m\"\nsystem_prompt = \"p\"\nmax_steps = 0\n",
+		"request_timeout_seconds": "platform = \"ollama\"\nbase_url = \"u\"\nmodel = \"m\"\nsystem_prompt = \"p\"\nrequest_timeout_seconds = 0\n",
 	}
 	for field, input := range cases {
 		cfg, err := Parse([]byte(input))

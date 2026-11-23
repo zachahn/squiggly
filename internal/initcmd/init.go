@@ -200,7 +200,11 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("read config: %w", err)
 	}
 
-	cfg := &config.Config{SystemPrompt: config.DefaultSystemPrompt, MaxSteps: config.DefaultMaxSteps}
+	cfg := &config.Config{
+		SystemPrompt:          config.DefaultSystemPrompt,
+		MaxSteps:              config.DefaultMaxSteps,
+		RequestTimeoutSeconds: config.DefaultRequestTimeoutSeconds,
+	}
 	previous := &config.Config{}
 	if existing != nil {
 		previous = existing
@@ -209,6 +213,9 @@ func Run(ctx context.Context, opts Options) error {
 		}
 		if existing.MaxSteps >= 1 {
 			cfg.MaxSteps = existing.MaxSteps
+		}
+		if existing.RequestTimeoutSeconds >= 1 {
+			cfg.RequestTimeoutSeconds = existing.RequestTimeoutSeconds
 		}
 	}
 

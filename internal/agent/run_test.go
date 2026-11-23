@@ -5,14 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/zachahn/editor/internal/config"
 )
 
 type scriptedModel struct {
@@ -190,5 +195,29 @@ func TestRunToolErrorsDoNotFailRun(t *testing.T) {
 		if !strings.HasPrefix(results[i], "error: ") || !strings.Contains(results[i], want) {
 			t.Errorf("result %d = %q, want error containing %q", i, results[i], want)
 		}
+	}
+}
+
+func TestNewChatModelUsesConfiguredRequestTimeout(t *testing.T) {
+	release := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer slow.Close()
+	defer close(release)
+
+	cfg := &config.Config{Platform: config.PlatformLlamaCpp, BaseURL: slow.URL + "/v1", Model: "m", RequestTimeoutSeconds: 1}
+	chatModel, err := NewChatModel(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	_, err = chatModel.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")})
+	elapsed := time.Since(started)
+	if err == nil {
+		t.Fatal("expected a timeout error")
+	}
+	if elapsed < time.Second || elapsed > 5*time.Second {
+		t.Fatalf("request ended after %v, want about 1s", elapsed)
 	}
 }

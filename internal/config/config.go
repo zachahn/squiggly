@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -14,7 +15,8 @@ const (
 	PlatformLlamaCpp         = "llamacpp"
 	PlatformOpenAICompatible = "openai-compatible"
 
-	DefaultMaxSteps = 25
+	DefaultMaxSteps              = 25
+	DefaultRequestTimeoutSeconds = 600
 )
 
 var Platforms = []string{PlatformOllama, PlatformLlamaCpp, PlatformOpenAICompatible}
@@ -36,21 +38,23 @@ const DefaultSystemPrompt = `Rewrite the text for clarity and concision. Preserv
 `
 
 type Config struct {
-	Platform     string `toml:"platform"`
-	BaseURL      string `toml:"base_url"`
-	APIKey       string `toml:"api_key"`
-	Model        string `toml:"model"`
-	MaxSteps     int    `toml:"max_steps"`
-	SystemPrompt string `toml:"system_prompt,multiline"`
+	Platform              string `toml:"platform"`
+	BaseURL               string `toml:"base_url"`
+	APIKey                string `toml:"api_key"`
+	Model                 string `toml:"model"`
+	MaxSteps              int    `toml:"max_steps"`
+	RequestTimeoutSeconds int    `toml:"request_timeout_seconds"`
+	SystemPrompt          string `toml:"system_prompt,multiline"`
 }
 
 type fileConfig struct {
-	Platform     string `toml:"platform"`
-	BaseURL      string `toml:"base_url"`
-	APIKey       string `toml:"api_key"`
-	Model        string `toml:"model"`
-	MaxSteps     *int   `toml:"max_steps"`
-	SystemPrompt string `toml:"system_prompt"`
+	Platform              string `toml:"platform"`
+	BaseURL               string `toml:"base_url"`
+	APIKey                string `toml:"api_key"`
+	Model                 string `toml:"model"`
+	MaxSteps              *int   `toml:"max_steps"`
+	RequestTimeoutSeconds *int   `toml:"request_timeout_seconds"`
+	SystemPrompt          string `toml:"system_prompt"`
 }
 
 func Dir() (string, error) {
@@ -87,15 +91,19 @@ func Parse(data []byte) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	cfg := &Config{
-		Platform:     raw.Platform,
-		BaseURL:      raw.BaseURL,
-		APIKey:       raw.APIKey,
-		Model:        raw.Model,
-		MaxSteps:     DefaultMaxSteps,
-		SystemPrompt: raw.SystemPrompt,
+		Platform:              raw.Platform,
+		BaseURL:               raw.BaseURL,
+		APIKey:                raw.APIKey,
+		Model:                 raw.Model,
+		MaxSteps:              DefaultMaxSteps,
+		RequestTimeoutSeconds: DefaultRequestTimeoutSeconds,
+		SystemPrompt:          raw.SystemPrompt,
 	}
 	if raw.MaxSteps != nil {
 		cfg.MaxSteps = *raw.MaxSteps
+	}
+	if raw.RequestTimeoutSeconds != nil {
+		cfg.RequestTimeoutSeconds = *raw.RequestTimeoutSeconds
 	}
 	return cfg, nil
 }
@@ -117,7 +125,14 @@ func (c *Config) Validate() error {
 	if c.MaxSteps < 1 {
 		problems = append(problems, fmt.Errorf("max_steps is %d but must be at least 1", c.MaxSteps))
 	}
+	if c.RequestTimeoutSeconds < 1 {
+		problems = append(problems, fmt.Errorf("request_timeout_seconds is %d but must be at least 1", c.RequestTimeoutSeconds))
+	}
 	return errors.Join(problems...)
+}
+
+func (c *Config) RequestTimeout() time.Duration {
+	return time.Duration(c.RequestTimeoutSeconds) * time.Second
 }
 
 func Load(path string) (*Config, error) {

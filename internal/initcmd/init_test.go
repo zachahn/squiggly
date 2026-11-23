@@ -59,7 +59,7 @@ func TestNewConfigWithModelPickList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := config.Config{Platform: "openai-compatible", BaseURL: srv.URL + "/v1", APIKey: "sk-test", Model: "beta", MaxSteps: 25, SystemPrompt: config.DefaultSystemPrompt}
+	want := config.Config{Platform: "openai-compatible", BaseURL: srv.URL + "/v1", APIKey: "sk-test", Model: "beta", MaxSteps: 25, RequestTimeoutSeconds: 600, SystemPrompt: config.DefaultSystemPrompt}
 	if *cfg != want {
 		t.Fatalf("cfg = %+v", cfg)
 	}
@@ -129,7 +129,7 @@ func TestExistingConfigPrefillsAndPreserves(t *testing.T) {
 	defer srv.Close()
 
 	path := filepath.Join(t.TempDir(), "config.toml")
-	existing := &config.Config{Platform: "openai-compatible", BaseURL: srv.URL, APIKey: "old-key", Model: "c", MaxSteps: 7, SystemPrompt: "custom prompt"}
+	existing := &config.Config{Platform: "openai-compatible", BaseURL: srv.URL, APIKey: "old-key", Model: "c", MaxSteps: 7, RequestTimeoutSeconds: 45, SystemPrompt: "custom prompt"}
 	if err := config.Write(path, existing); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestUnparseableExistingConfigUsesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.SystemPrompt != config.DefaultSystemPrompt || cfg.MaxSteps != 25 {
+	if cfg.SystemPrompt != config.DefaultSystemPrompt || cfg.MaxSteps != 25 || cfg.RequestTimeoutSeconds != 600 {
 		t.Fatalf("cfg = %+v", cfg)
 	}
 }

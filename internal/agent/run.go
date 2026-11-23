@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/ollama"
 	"github.com/cloudwego/eino-ext/components/model/openai"
@@ -18,8 +17,6 @@ import (
 	"github.com/zachahn/editor/internal/config"
 	"github.com/zachahn/editor/internal/session"
 )
-
-const RequestTimeout = 120 * time.Second
 
 const Preamble = `You are rewriting text inside a sandboxed session. The session consists of the files ORIGINAL.txt, CURRENT.txt, and any SCRATCH-<n>.txt files (for example SCRATCH-1.txt).
 
@@ -36,13 +33,14 @@ The rewriting instructions follow.
 `
 
 func NewChatModel(ctx context.Context, cfg *config.Config) (model.ToolCallingChatModel, error) {
-	httpClient := &http.Client{Timeout: RequestTimeout}
+	timeout := cfg.RequestTimeout()
+	httpClient := &http.Client{Timeout: timeout}
 	switch cfg.Platform {
 	case config.PlatformOllama:
 		return ollama.NewChatModel(ctx, &ollama.ChatModelConfig{
 			BaseURL:    cfg.BaseURL,
 			Model:      cfg.Model,
-			Timeout:    RequestTimeout,
+			Timeout:    timeout,
 			HTTPClient: httpClient,
 		})
 	case config.PlatformLlamaCpp, config.PlatformOpenAICompatible:
@@ -54,7 +52,7 @@ func NewChatModel(ctx context.Context, cfg *config.Config) (model.ToolCallingCha
 			BaseURL:    cfg.BaseURL,
 			APIKey:     apiKey,
 			Model:      cfg.Model,
-			Timeout:    RequestTimeout,
+			Timeout:    timeout,
 			HTTPClient: httpClient,
 		})
 	}
