@@ -201,7 +201,20 @@ The built-in preamble is fixed in the binary and MUST state that:
 The default `system_prompt` written by `editor init` MUST be:
 
 ```
-Rewrite the text for clarity and concision. Preserve the meaning, tone, and any technical details. Do not add new information.
+Rewrite the text for clarity and concision. Preserve the meaning, tone, and any technical details. Do not add new information. Do not imagine a scenario; restate factually.
+
+- Use American English.
+- Avoid anthropomorphizing inanimate/software objects.
+- Avoid using the present tense verb "names" and "carries" as it's ambiguous and anthropomorphizing.
+- Avoid the phrase "$verb it".
+
+<example>
+<summary>Avoid the phrase "$verb it". Avoid anthropomorphizing inanimate/software objects.</summary>
+<comparison>
+- BAD: ... before the bank settled it
+- GOOD: ... before it is settled by the bank
+</comparison>
+</example>
 ```
 
 `SYSTEM.txt` is written once at `start_rewrite` and MUST be used for every revision of the session, so later edits to the config's `system_prompt` do not affect existing sessions. The platform, base URL, API key, model, and `max_steps` MUST come from the config loaded at startup.
