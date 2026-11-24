@@ -80,6 +80,7 @@ CREATE INDEX requests_started_at ON requests(started_at);
 CREATE INDEX file_versions_file_id ON file_versions(file_id);
 CREATE INDEX file_versions_request_id ON file_versions(request_id);
 CREATE INDEX messages_request_id ON messages(request_id);`,
+	`ALTER TABLE sessions ADD COLUMN instructions TEXT NOT NULL DEFAULT '';`,
 }
 
 func DBPath() (string, error) {

@@ -97,6 +97,14 @@ type Session struct {
 	ID           int64
 	PublicID     string
 	SystemPrompt string
+	Instructions string
+}
+
+type NewSession struct {
+	Text         string
+	Instructions string
+	SystemPrompt string
+	Arguments    string
 }
 
 type Request struct {
@@ -104,7 +112,7 @@ type Request struct {
 	Deadline time.Time
 }
 
-func (s *Store) Create(ctx context.Context, text, systemPrompt, arguments string) (*Session, *Request, error) {
+func (s *Store) Create(ctx context.Context, params NewSession) (*Session, *Request, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create session: %w", err)
@@ -112,15 +120,15 @@ func (s *Store) Create(ctx context.Context, text, systemPrompt, arguments string
 	defer tx.Rollback()
 
 	now := s.nowMillis()
-	sess := &Session{SystemPrompt: systemPrompt}
+	sess := &Session{SystemPrompt: params.SystemPrompt, Instructions: params.Instructions}
 	for {
 		publicID, err := s.NewID()
 		if err != nil {
 			return nil, nil, err
 		}
 		result, err := tx.ExecContext(ctx,
-			`INSERT INTO sessions (public_id, system_prompt, version, created_at) VALUES (?, ?, 0, ?)`,
-			publicID, systemPrompt, now)
+			`INSERT INTO sessions (public_id, system_prompt, instructions, version, created_at) VALUES (?, ?, ?, 0, ?)`,
+			publicID, params.SystemPrompt, params.Instructions, now)
 		if isUniqueViolation(err) {
 			continue
 		}
@@ -143,12 +151,12 @@ func (s *Store) Create(ctx context.Context, text, systemPrompt, arguments string
 		if err != nil {
 			return nil, nil, fmt.Errorf("create session: %w", err)
 		}
-		if err := insertVersion(ctx, tx, fileID, nil, text, now); err != nil {
+		if err := insertVersion(ctx, tx, fileID, nil, params.Text, now); err != nil {
 			return nil, nil, fmt.Errorf("create session: %w", err)
 		}
 	}
 
-	req, err := s.insertRunningRequest(ctx, tx, sess.ID, ToolStartRewrite, arguments)
+	req, err := s.insertRunningRequest(ctx, tx, sess.ID, ToolStartRewrite, params.Arguments)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create session: %w", err)
 	}
@@ -166,8 +174,8 @@ func isUniqueViolation(err error) bool {
 func (s *Store) Find(ctx context.Context, publicID string) (*Session, error) {
 	sess := &Session{PublicID: publicID}
 	err := s.DB.QueryRowContext(ctx,
-		`SELECT id, system_prompt FROM sessions WHERE public_id = ?`, publicID,
-	).Scan(&sess.ID, &sess.SystemPrompt)
+		`SELECT id, system_prompt, instructions FROM sessions WHERE public_id = ?`, publicID,
+	).Scan(&sess.ID, &sess.SystemPrompt, &sess.Instructions)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownSession, publicID)
 	}

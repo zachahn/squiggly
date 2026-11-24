@@ -281,3 +281,16 @@ func TestNewChatModelUsesConfiguredRequestTimeout(t *testing.T) {
 		t.Fatalf("request ended after %v, want about 1s", elapsed)
 	}
 }
+
+func TestSystemMessageAppendsInstructions(t *testing.T) {
+	if got := SystemMessage("be concise\n", ""); got != prose.AgentPreamble+"be concise\n" {
+		t.Errorf("without instructions = %q", got)
+	}
+	if got := SystemMessage("be concise\n", "  \n"); got != prose.AgentPreamble+"be concise\n" {
+		t.Errorf("with blank instructions = %q", got)
+	}
+	want := prose.AgentPreamble + "be concise\n\n" + prose.SessionInstructionsHeading + "\n\nkeep it formal"
+	if got := SystemMessage("be concise\n", "keep it formal"); got != want {
+		t.Errorf("with instructions = %q", got)
+	}
+}

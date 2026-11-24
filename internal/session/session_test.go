@@ -64,7 +64,7 @@ func TestOpenSetsModesPragmasAndSchema(t *testing.T) {
 		db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys)
 		db.QueryRow("PRAGMA busy_timeout").Scan(&busyTimeout)
 		db.QueryRow("PRAGMA user_version").Scan(&userVersion)
-		if journal != "wal" || foreignKeys != 1 || busyTimeout < 5000 || userVersion != 1 {
+		if journal != "wal" || foreignKeys != 1 || busyTimeout < 5000 || userVersion != len(migrations) {
 			t.Fatalf("journal=%s foreign_keys=%d busy_timeout=%d user_version=%d", journal, foreignKeys, busyTimeout, userVersion)
 		}
 	}
@@ -81,7 +81,7 @@ func TestCreateFindAndSnapshot(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 
-	sess, req, err := store.Create(ctx, "orig", "sys", `{}`)
+	sess, req, err := store.Create(ctx, NewSession{Text: "orig", Instructions: "keep it formal", SystemPrompt: "sys", Arguments: `{}`})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestCreateFindAndSnapshot(t *testing.T) {
 	}
 
 	found, err := store.Find(ctx, sess.PublicID)
-	if err != nil || found.ID != sess.ID || found.SystemPrompt != "sys" {
+	if err != nil || found.ID != sess.ID || found.SystemPrompt != "sys" || found.Instructions != "keep it formal" {
 		t.Fatalf("Find = %+v, %v", found, err)
 	}
 	if _, err := store.Find(ctx, "00000000"); !errors.Is(err, ErrUnknownSession) {
@@ -131,11 +131,11 @@ func TestCreateRetriesPublicIDCollision(t *testing.T) {
 		ids = ids[1:]
 		return id, nil
 	}
-	first, _, err := store.Create(ctx, "a", "s", `{}`)
+	first, _, err := store.Create(ctx, NewSession{Text: "a", SystemPrompt: "s", Arguments: `{}`})
 	if err != nil || first.PublicID != "aaaaaaaa" {
 		t.Fatalf("first = %+v, %v", first, err)
 	}
-	second, _, err := store.Create(ctx, "b", "s", `{}`)
+	second, _, err := store.Create(ctx, NewSession{Text: "b", SystemPrompt: "s", Arguments: `{}`})
 	if err != nil || second.PublicID != "bbbbbbbb" {
 		t.Fatalf("second = %+v, %v", second, err)
 	}
@@ -144,7 +144,7 @@ func TestCreateRetriesPublicIDCollision(t *testing.T) {
 func TestCommitAndFailVersions(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
-	sess, req, _ := store.Create(ctx, "orig", "sys", `{}`)
+	sess, req, _ := store.Create(ctx, NewSession{Text: "orig", SystemPrompt: "sys", Arguments: `{}`})
 
 	if err := store.Commit(ctx, sess.ID, req.ID, 0, map[string]string{CurrentFile: "v1", "SCRATCH-1.txt": "notes"}); err != nil {
 		t.Fatal(err)
@@ -210,7 +210,7 @@ func TestRecordRejectedAndAppendMessage(t *testing.T) {
 		t.Errorf("rejected row = %v %s %d %d %d", sessionID, status, started, deadline, finished)
 	}
 
-	_, req, _ := store.Create(ctx, "t", "s", `{}`)
+	_, req, _ := store.Create(ctx, NewSession{Text: "t", SystemPrompt: "s", Arguments: `{}`})
 	calls := `[{"id":"1","name":"read_file","arguments":"{}"}]`
 	tokens := int64(7)
 	if err := store.AppendMessage(ctx, req.ID, Message{Role: "assistant", ToolCalls: &calls, TotalTokens: &tokens}); err != nil {
@@ -243,4 +243,29 @@ func TestLockSerializesSameSession(t *testing.T) {
 	}
 	unlock()
 	<-acquired
+}
+
+func TestOpenMigratesVersionOneSessions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigration(context.Background(), db, 1, migrations[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (public_id, system_prompt, version, created_at) VALUES ('0123abcd', 'sys', 0, 0)`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	migrated, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer migrated.Close()
+	found, err := NewStore(migrated, testSettings).Find(context.Background(), "0123abcd")
+	if err != nil || found.SystemPrompt != "sys" || found.Instructions != "" {
+		t.Fatalf("Find = %+v, %v", found, err)
+	}
 }

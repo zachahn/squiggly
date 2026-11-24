@@ -58,6 +58,7 @@ type Runner struct {
 type RunInput struct {
 	Snapshot     *session.Snapshot
 	SystemPrompt string
+	Instructions string
 	UserMessage  string
 	Record       func(context.Context, *schema.Message) error
 }
@@ -72,6 +73,14 @@ var (
 	ErrDeadlineReached  = errors.New("the agent run reached its deadline before finishing")
 	errRecordingStopped = errors.New("recording the transcript failed")
 )
+
+func SystemMessage(systemPrompt, instructions string) string {
+	message := prose.AgentPreamble + systemPrompt
+	if strings.TrimSpace(instructions) == "" {
+		return message
+	}
+	return strings.TrimRight(message, "\n") + "\n\n" + prose.SessionInstructionsHeading + "\n\n" + instructions
+}
 
 func graphStepLimit(maxSteps int) int {
 	return 2 * maxSteps
@@ -110,7 +119,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (*RunResult, error) {
 	}
 
 	messages := []*schema.Message{
-		schema.SystemMessage(prose.AgentPreamble + in.SystemPrompt),
+		schema.SystemMessage(SystemMessage(in.SystemPrompt, in.Instructions)),
 		schema.UserMessage(in.UserMessage),
 	}
 	for _, msg := range messages {

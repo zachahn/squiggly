@@ -16,8 +16,9 @@ const ServerInstructions = "Rewrite prose using Squiggly through a back-and-fort
 const ReviewReminder = "Compare this draft with the original text and call revise_rewrite with specific feedback until the draft is satisfactory."
 
 const (
-	StartRewriteDescription     = "Start a rewriting session. The text is rewritten by an LLM agent into an initial draft, not a final result. The result begins with a session_id line and a review reminder line, followed by a blank line and the draft. Review the draft against the original text, and pass the session_id to revise_rewrite with feedback until the draft is right. When the run fails, the error message also begins with a session_id line, and the session may still be revised."
-	StartRewriteTextDescription = "Text to rewrite."
+	StartRewriteDescription             = "Start a rewriting session. The text is rewritten by an LLM agent into an initial draft, not a final result. The result begins with a session_id line and a review reminder line, followed by a blank line and the draft. Review the draft against the original text, and pass the session_id to revise_rewrite with feedback until the draft is right. When the run fails, the error message also begins with a session_id line, and the session may still be revised."
+	StartRewriteTextDescription         = "Text to rewrite."
+	StartRewriteInstructionsDescription = "Optional instructions for this rewrite, such as intended audience, target length, or terms that must be kept, are applied to the initial draft and all session revisions."
 
 	ReviseRewriteDescription          = "Revise the rewrite of an existing session with feedback. The result contains only the revised text."
 	ReviseRewriteSessionIDDescription = "Session ID returned by start_rewrite."
@@ -42,6 +43,8 @@ Use list_files, read_file, write_file, edit_file, and grep to manage these files
 The rewriting instructions follow.
 
 `
+
+const SessionInstructionsHeading = "The following session instructions provided with the request supplement the rewriting instructions above."
 
 const DefaultSystemPrompt = `Rewrite the text for clarity and concision. Preserve the meaning, tone, and technical details. Do not add new information or imagine scenarios; restate factually.
 

@@ -143,12 +143,19 @@ Rewrite prose using Squiggly through a back-and-forth with a rewriting agent. A 
 | Name | Type | Required | Constraint |
 | --- | --- | --- | --- |
 | `text` | string | yes | MUST NOT be empty. |
+| `instructions` | string | no | Session instructions from the caller. An empty or whitespace-only value is treated as absent. |
+
+The `instructions` parameter MUST be described to MCP clients as:
+
+```
+Optional instructions for this rewrite, such as intended audience, target length, or terms that must be kept, are applied to the initial draft and all session revisions.
+```
 
 **Behavior:**
 
 1. Parameters are validated. A call that fails validation is rejected and recorded as described in Section 9.2.
 2. In one transaction:
-   - A session row is inserted with a new public ID (Section 6.3), `system_prompt` set to the config's `system_prompt`, and `version` set to 0.
+   - A session row is inserted with a new public ID (Section 6.3), `system_prompt` set to the config's `system_prompt`, `instructions` set to the `instructions` parameter (empty when absent), and `version` set to 0.
    - `ORIGINAL.txt` is inserted with `writable` set to 0, and `CURRENT.txt` is inserted with `writable` set to 1. Each file is given one version with content `text` and a NULL `request_id`.
    - The request row is inserted with status `running` (Section 9.3).
 3. An agent run is performed (Section 5) with the first user message `Rewrite CURRENT.txt.`
@@ -188,7 +195,7 @@ Rewrite prose using Squiggly through a back-and-forth with a rewriting agent. A 
 2. The session is located as described in Section 6.4. When no session is found, the call is rejected and recorded as described in Section 9.2.
 3. The per-session mutex is acquired (Section 4.5).
 4. The request row is inserted with status `running` (Section 9.3).
-5. An agent run is performed (Section 5) with the session's `system_prompt` and the user message:
+5. An agent run is performed (Section 5) with the session's `system_prompt` and `instructions`, and the user message:
 
    ```
    Feedback on CURRENT.txt:
@@ -221,7 +228,11 @@ Several `squiggly mcp` processes MAY share the database. Calls on the same sessi
 
 ### 5.1. Instructions
 
-The system message for each run MUST be composed of a built-in preamble followed by the session's system prompt.
+The system message for each run MUST be composed of a built-in preamble followed by the session's system prompt. When the session's `instructions` are not empty after trimming whitespace, the system prompt MUST be followed by a blank line, this heading, a blank line, and the instructions:
+
+```
+The following session instructions provided with the request supplement the rewriting instructions above.
+```
 
 The built-in preamble is fixed in the binary and MUST state that:
 
@@ -347,6 +358,12 @@ CREATE INDEX file_versions_request_id ON file_versions(request_id);
 CREATE INDEX messages_request_id ON messages(request_id);
 ```
 
+Migration 2:
+
+```sql
+ALTER TABLE sessions ADD COLUMN instructions TEXT NOT NULL DEFAULT '';
+```
+
 ### 6.3. IDs
 
 Every table uses an integer `id` primary key for internal references. An `id` value MUST NOT be included in any tool result and MUST NOT be accepted as a tool argument.
@@ -365,7 +382,7 @@ A session is located by `sessions.public_id`. When no row matches, the session i
 | `CURRENT.txt` | 1 | `start_rewrite` | read, write |
 | `SCRATCH-<n>.txt` | 1 | agent | create, read, write |
 
-The session's system prompt is stored in `sessions.system_prompt` and is not accessible to the agent.
+The session's system prompt and instructions are stored in `sessions.system_prompt` and `sessions.instructions`, and are not accessible to the agent as files.
 
 ### 6.6. File Versions
 
@@ -477,7 +494,7 @@ The row for a call that reaches an agent run MUST be inserted with status `runni
 | --- | --- |
 | `session_id` | The session's internal ID. NULL for rejected calls. |
 | `tool` | `start_rewrite` or `revise_rewrite`. |
-| `arguments` | The tool arguments as received, encoded as JSON. For a `start_rewrite` call that creates a session, `text` MUST be omitted, because `text` is stored as the first version of `ORIGINAL.txt`. |
+| `arguments` | The tool arguments as received, encoded as JSON. For a `start_rewrite` call that creates a session, `text` and `instructions` MUST be omitted, because `text` is stored as the first version of `ORIGINAL.txt` and `instructions` is stored in `sessions.instructions`. |
 | `status` | `running`, `ok`, or `error`. |
 | `error` | The tool error message when `status` is `error`. NULL otherwise. |
 | `platform`, `model` | From the config loaded at startup. |

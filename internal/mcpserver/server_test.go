@@ -19,23 +19,25 @@ import (
 )
 
 type fakeRunner struct {
-	mu        sync.Mutex
-	err       error
-	result    string
-	changed   map[string]string
-	calls     []string
-	prompts   []string
-	snapshots []*session.Snapshot
-	deadlines []time.Time
-	hold      chan struct{}
-	started   chan struct{}
-	beforeEnd func()
+	mu           sync.Mutex
+	err          error
+	result       string
+	changed      map[string]string
+	calls        []string
+	prompts      []string
+	instructions []string
+	snapshots    []*session.Snapshot
+	deadlines    []time.Time
+	hold         chan struct{}
+	started      chan struct{}
+	beforeEnd    func()
 }
 
 func (f *fakeRunner) Run(ctx context.Context, in agent.RunInput) (*agent.RunResult, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, in.UserMessage)
 	f.prompts = append(f.prompts, in.SystemPrompt)
+	f.instructions = append(f.instructions, in.Instructions)
 	f.snapshots = append(f.snapshots, in.Snapshot)
 	deadline, _ := ctx.Deadline()
 	f.deadlines = append(f.deadlines, deadline)
@@ -373,5 +375,54 @@ func TestFailureRecordingErrorIsReported(t *testing.T) {
 	msg := text(t, res)
 	if !res.IsError || !strings.Contains(msg, "model exploded") || !strings.Contains(msg, "record failure") {
 		t.Fatalf("message = %q", msg)
+	}
+}
+
+func TestStartWithInstructionsAppliesToEveryRun(t *testing.T) {
+	runner := &fakeRunner{result: "rewritten"}
+	h := newHandlers(t, runner)
+
+	res, _ := h.StartRewrite(context.Background(), request(map[string]any{"text": "original", "instructions": "keep it under 50 words"}))
+	if res.IsError {
+		t.Fatal(text(t, res))
+	}
+	id := sessionID(t, text(t, res))
+
+	res, _ = h.ReviseRewrite(context.Background(), request(map[string]any{"session_id": id, "feedback": "shorter"}))
+	if res.IsError {
+		t.Fatal(text(t, res))
+	}
+
+	if strings.Join(runner.instructions, "|") != "keep it under 50 words|keep it under 50 words" {
+		t.Errorf("instructions = %q", runner.instructions)
+	}
+	if rows := requestRows(t, h); rows[0].arguments != "{}" {
+		t.Errorf("start arguments = %s", rows[0].arguments)
+	}
+}
+
+func TestStartWithoutInstructions(t *testing.T) {
+	runner := &fakeRunner{result: "rewritten"}
+	h := newHandlers(t, runner)
+
+	res, _ := h.StartRewrite(context.Background(), request(map[string]any{"text": "original"}))
+	if res.IsError || runner.instructions[0] != "" {
+		t.Fatalf("res = %+v, instructions = %q", res, runner.instructions)
+	}
+}
+
+func TestStartRejectsNonStringInstructions(t *testing.T) {
+	runner := &fakeRunner{result: "rewritten"}
+	h := newHandlers(t, runner)
+
+	res, _ := h.StartRewrite(context.Background(), request(map[string]any{"text": "original", "instructions": 5}))
+	if !res.IsError || text(t, res) != `parameter "instructions" must be a string` {
+		t.Fatalf("res = %+v", res)
+	}
+	if len(runner.calls) != 0 {
+		t.Errorf("runner called %d times", len(runner.calls))
+	}
+	if rows := requestRows(t, h); len(rows) != 1 || rows[0].status != "error" || rows[0].sessionID.Valid {
+		t.Errorf("rows = %+v", rows)
 	}
 }

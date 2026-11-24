@@ -33,6 +33,7 @@ func New(h *Handlers) *server.MCPServer {
 	s.AddTool(mcp.NewTool(session.ToolStartRewrite,
 		mcp.WithDescription(prose.StartRewriteDescription),
 		mcp.WithString("text", mcp.Required(), mcp.MinLength(1), mcp.Description(prose.StartRewriteTextDescription)),
+		mcp.WithString("instructions", mcp.Description(prose.StartRewriteInstructionsDescription)),
 	), h.StartRewrite)
 
 	s.AddTool(mcp.NewTool(session.ToolReviseRewrite,
@@ -55,6 +56,18 @@ func stringArg(args map[string]any, key string) (string, error) {
 	}
 	if str == "" {
 		return "", fmt.Errorf("parameter %q must not be empty", key)
+	}
+	return str, nil
+}
+
+func optionalStringArg(args map[string]any, key string) (string, error) {
+	value, ok := args[key]
+	if !ok || value == nil {
+		return "", nil
+	}
+	str, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("parameter %q must be a string", key)
 	}
 	return str, nil
 }
@@ -89,12 +102,22 @@ func (h *Handlers) reject(ctx context.Context, tool string, req mcp.CallToolRequ
 }
 
 func (h *Handlers) StartRewrite(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	text, err := stringArg(req.GetArguments(), "text")
+	args := req.GetArguments()
+	text, err := stringArg(args, "text")
+	if err != nil {
+		return h.reject(ctx, session.ToolStartRewrite, req, err.Error()), nil
+	}
+	instructions, err := optionalStringArg(args, "instructions")
 	if err != nil {
 		return h.reject(ctx, session.ToolStartRewrite, req, err.Error()), nil
 	}
 
-	sess, request, err := h.Store.Create(ctx, text, h.SystemPrompt, encodeArguments(req.Params.Arguments, "text"))
+	sess, request, err := h.Store.Create(ctx, session.NewSession{
+		Text:         text,
+		Instructions: instructions,
+		SystemPrompt: h.SystemPrompt,
+		Arguments:    encodeArguments(req.Params.Arguments, "text", "instructions"),
+	})
 	if err != nil {
 		return h.reject(ctx, session.ToolStartRewrite, req, "could not create session: "+err.Error()), nil
 	}
@@ -155,6 +178,7 @@ func (h *Handlers) run(ctx context.Context, sess *session.Session, request *sess
 	result, err := h.Runner.Run(runCtx, agent.RunInput{
 		Snapshot:     snapshot,
 		SystemPrompt: sess.SystemPrompt,
+		Instructions: sess.Instructions,
 		UserMessage:  userMessage,
 		Record: func(ctx context.Context, msg *schema.Message) error {
 			record, err := agent.TranscriptMessage(msg)

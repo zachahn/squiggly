@@ -49,7 +49,7 @@ func TestRun(t *testing.T) {
 	create := func(publicID string, createdHoursAgo float64) *session.Session {
 		at(createdHoursAgo)
 		store.NewID = func() (string, error) { return publicID, nil }
-		sess, req, err := store.Create(ctx, "t", "s", "{}")
+		sess, req, err := store.Create(ctx, session.NewSession{Text: "t", SystemPrompt: "s", Arguments: "{}"})
 		if err != nil {
 			t.Fatal(err)
 		}
