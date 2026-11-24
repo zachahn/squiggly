@@ -35,7 +35,7 @@ func TestParseDuration(t *testing.T) {
 
 func TestRun(t *testing.T) {
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "editor.db")
+	path := filepath.Join(t.TempDir(), "sessions.db")
 	db, err := session.Open(ctx, path)
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +112,7 @@ func TestRun(t *testing.T) {
 }
 
 func TestRunMissingDatabase(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "missing", "editor.db")
+	path := filepath.Join(t.TempDir(), "missing", "sessions.db")
 	var out bytes.Buffer
 	if err := Run(context.Background(), path, time.Hour, time.Now(), &out); err != nil {
 		t.Fatal(err)

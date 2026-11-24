@@ -148,7 +148,7 @@ func TestMCPEndToEnd(t *testing.T) {
 		t.Errorf("Authorization = %q", fake.auth[0])
 	}
 
-	dbPath := filepath.Join(stateHome, "editor", "editor.db")
+	dbPath := filepath.Join(stateHome, "editor", "sessions.db")
 	if info, err := os.Stat(dbPath); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("database = %v, %v", info, err)
 	}

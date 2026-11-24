@@ -264,7 +264,7 @@ The agent's final text reply MUST NOT be returned to the MCP client. The reply i
 
 ### 6.1. Location
 
-All state MUST be stored in a single SQLite database at `$XDG_STATE_HOME/editor/editor.db`. When `XDG_STATE_HOME` is unset or empty, `~/.local/state/editor/editor.db` MUST be used.
+All state MUST be stored in a single SQLite database at `$XDG_STATE_HOME/editor/sessions.db`. When `XDG_STATE_HOME` is unset or empty, `~/.local/state/editor/sessions.db` MUST be used.
 
 The directory MUST be created with mode `0700` when absent. The database file MUST have mode `0600`, because session text is stored in the database.
 

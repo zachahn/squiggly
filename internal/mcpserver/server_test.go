@@ -84,7 +84,7 @@ func text(t *testing.T, res *mcp.CallToolResult) string {
 
 func newHandlers(t *testing.T, runner AgentRunner) *Handlers {
 	t.Helper()
-	db, err := session.Open(context.Background(), filepath.Join(t.TempDir(), "editor.db"))
+	db, err := session.Open(context.Background(), filepath.Join(t.TempDir(), "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
