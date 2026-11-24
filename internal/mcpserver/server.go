@@ -17,8 +17,8 @@ import (
 const (
 	firstRunMessage = "Rewrite CURRENT.txt."
 	Version         = "0.1.0"
-	Instructions    = "Rewrite prose using Squiggly through a back-and-forth with a rewriting agent. A single `start_rewrite` call results in an initial draft, not a final result. Compare each draft to your original text and your intent for missing details, altered meaning, incorrect tone, or unwanted additions. Use `revise_rewrite` with specific feedback and repeat until the draft is right. Accept a draft without revision only if it has no remaining issues."
-	ReviewReminder  = "Review this draft against your original text and call revise_rewrite with specific feedback until the draft is right."
+	Instructions    = "Rewrite prose using Squiggly through a back-and-forth with a rewriting agent. A single `start_rewrite` call produces an initial draft, not a final result. Compare each draft to your original text and your intent for missing details, altered meaning, incorrect tone, or unwanted additions. Use `revise_rewrite` with specific feedback and repeat until the draft is satisfactory. Accept a draft without revision only if no issues remain."
+	ReviewReminder  = "Compare this draft with the original text and call revise_rewrite with specific feedback until the draft is satisfactory."
 )
 
 type AgentRunner interface {

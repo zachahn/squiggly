@@ -133,7 +133,7 @@ The server MUST communicate over stdio only.
 The `initialize` response MUST include these server instructions:
 
 ```
-Rewrite prose using Squiggly through a back-and-forth with a rewriting agent. A single `start_rewrite` call results in an initial draft, not a final result. Compare each draft to your original text and your intent for missing details, altered meaning, incorrect tone, or unwanted additions. Use `revise_rewrite` with specific feedback and repeat until the draft is right. Accept a draft without revision only if it has no remaining issues.
+Rewrite prose using Squiggly through a back-and-forth with a rewriting agent. A single `start_rewrite` call produces an initial draft, not a final result. Compare each draft to your original text and your intent for missing details, altered meaning, incorrect tone, or unwanted additions. Use `revise_rewrite` with specific feedback and repeat until the draft is satisfactory. Accept a draft without revision only if no issues remain.
 ```
 
 ### 4.2. Tool: `start_rewrite`
@@ -156,7 +156,7 @@ Rewrite prose using Squiggly through a back-and-forth with a rewriting agent. A 
 
    ```
    session_id: <public_id>
-   Review this draft against your original text and call revise_rewrite with specific feedback until the draft is right.
+   Compare this draft with the original text and call revise_rewrite with specific feedback until the draft is satisfactory.
 
    <contents of CURRENT.txt>
    ```
@@ -235,15 +235,15 @@ The built-in preamble is fixed in the binary and MUST state that:
 The default `system_prompt` written by `squiggly init` MUST be:
 
 ```
-Rewrite the text for clarity and concision. Preserve the meaning, tone, and any technical details. Do not add new information. Do not imagine a scenario; restate factually.
+Rewrite the text for clarity and concision. Preserve the meaning, tone, and technical details. Do not add new information or imagine scenarios; restate factually.
 
 - Use American English.
-- Avoid anthropomorphizing inanimate/software objects.
-- Avoid using the present tense verb "names" and "carries" as it's ambiguous and anthropomorphizing.
+- Avoid anthropomorphizing inanimate or software objects.
+- Avoid the present tense verbs "names" and "carries", as they are ambiguous and anthropomorphic.
 - Avoid the phrase "$verb it".
 
 <example>
-<summary>Avoid the phrase "$verb it". Avoid anthropomorphizing inanimate/software objects.</summary>
+<summary>Avoid the phrase "$verb it" and anthropomorphizing inanimate or software objects.</summary>
 <comparison>
 - BAD: ... before the bank settled it
 - GOOD: ... before it is settled by the bank

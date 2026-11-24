@@ -73,7 +73,7 @@ func listFilesTool(overlay *Overlay) *fileTool {
 	return &fileTool{
 		info: &schema.ToolInfo{
 			Name: "list_files",
-			Desc: "List the session files, one per line, each followed by its size in bytes.",
+			Desc: "List session files and their sizes in bytes, one per line.",
 		},
 		run: func(json.RawMessage) (string, error) {
 			var b strings.Builder
@@ -114,7 +114,7 @@ func writeFileTool(overlay *Overlay) *fileTool {
 	return &fileTool{
 		info: &schema.ToolInfo{
 			Name: "write_file",
-			Desc: "Replace the full contents of a session file. SCRATCH-<n>.txt files are created when absent. Read-only files such as ORIGINAL.txt cannot be written.",
+			Desc: "Replace the full contents of a session file. SCRATCH-<n>.txt files are created if absent. Read-only files, such as ORIGINAL.txt, cannot be written.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"name":    nameParam(),
 				"content": {Type: schema.String, Desc: "New full contents of the file.", Required: true},
@@ -159,10 +159,10 @@ func editFileTool(overlay *Overlay) *fileTool {
 	return &fileTool{
 		info: &schema.ToolInfo{
 			Name: "edit_file",
-			Desc: "Replace the single occurrence of old_string in a session file with new_string. The edit is refused when old_string is empty or does not occur exactly once. Read-only files such as ORIGINAL.txt cannot be edited.",
+			Desc: "Replace a single occurrence of old_string in a session file with new_string. The edit fails if old_string is empty or does not occur exactly once. Read-only files, such as ORIGINAL.txt, cannot be edited.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"name":       nameParam(),
-				"old_string": {Type: schema.String, Desc: "Exact text to replace. Must occur exactly once.", Required: true},
+				"old_string": {Type: schema.String, Desc: "Exact text to replace; must occur exactly once.", Required: true},
 				"new_string": {Type: schema.String, Desc: "Replacement text.", Required: true},
 			}),
 		},
@@ -208,10 +208,10 @@ func grepTool(overlay *Overlay) *fileTool {
 	return &fileTool{
 		info: &schema.ToolInfo{
 			Name: "grep",
-			Desc: "Search session files with a Go RE2 regular expression. Matches are returned one per line as name:line:text with 1-based line numbers. When name is omitted, every session file is searched.",
+			Desc: "Search session files using a Go RE2 regular expression. Return matches one per line as name:line:text with 1-based line numbers. Search all session files when name is omitted.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"pattern": {Type: schema.String, Desc: "Go RE2 regular expression.", Required: true},
-				"name":    {Type: schema.String, Desc: "Optional file name to restrict the search to."},
+				"name":    {Type: schema.String, Desc: "Optional file name to restrict the search."},
 			}),
 		},
 		run: func(raw json.RawMessage) (string, error) {

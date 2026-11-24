@@ -22,15 +22,15 @@ import (
 	"github.com/zachahn/squiggly/internal/session"
 )
 
-const Preamble = `You are rewriting text inside a sandboxed session. The session consists of the files ORIGINAL.txt, CURRENT.txt, and any SCRATCH-<n>.txt files (for example SCRATCH-1.txt).
+const Preamble = `You rewrite text in a sandboxed session consisting of ORIGINAL.txt, CURRENT.txt, and any SCRATCH-<n>.txt files (e.g., SCRATCH-1.txt).
 
-- ORIGINAL.txt holds the original text and is read-only.
-- CURRENT.txt holds the working rewrite. The final rewrite MUST be left in CURRENT.txt.
-- SCRATCH-<n>.txt files may be created for notes. Scratch files persist across revisions of the session.
-- All text replies are dropped. Only the contents of CURRENT.txt are returned.
-- The run ends when a reply is given without a tool call.
+- ORIGINAL.txt: Read-only; contains the original text.
+- CURRENT.txt: Contains the working rewrite; the final rewrite MUST be left in CURRENT.txt.
+- SCRATCH-<n>.txt: Files that may be created for notes; they persist across session revisions.
+- All text replies are discarded; only the contents of CURRENT.txt are returned.
+- The run ends when a reply is provided without a tool call.
 
-Use the tools list_files, read_file, write_file, edit_file, and grep to work with the files. Read CURRENT.txt before changing it.
+Use list_files, read_file, write_file, edit_file, and grep to manage these files. Read CURRENT.txt before making changes.
 
 The rewriting instructions follow.
 

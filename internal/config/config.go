@@ -21,15 +21,15 @@ const (
 
 var Platforms = []string{PlatformOllama, PlatformLlamaCpp, PlatformOpenAICompatible}
 
-const DefaultSystemPrompt = `Rewrite the text for clarity and concision. Preserve the meaning, tone, and any technical details. Do not add new information. Do not imagine a scenario; restate factually.
+const DefaultSystemPrompt = `Rewrite the text for clarity and concision. Preserve the meaning, tone, and technical details. Do not add new information or imagine scenarios; restate factually.
 
 - Use American English.
-- Avoid anthropomorphizing inanimate/software objects.
-- Avoid using the present tense verb "names" and "carries" as it's ambiguous and anthropomorphizing.
+- Avoid anthropomorphizing inanimate or software objects.
+- Avoid the present tense verbs "names" and "carries", as they are ambiguous and anthropomorphic.
 - Avoid the phrase "$verb it".
 
 <example>
-<summary>Avoid the phrase "$verb it". Avoid anthropomorphizing inanimate/software objects.</summary>
+<summary>Avoid the phrase "$verb it" and anthropomorphizing inanimate or software objects.</summary>
 <comparison>
 - BAD: ... before the bank settled it
 - GOOD: ... before it is settled by the bank

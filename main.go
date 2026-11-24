@@ -23,7 +23,7 @@ import (
 const usage = `Usage:
   squiggly init                            Interactively create or update the config file.
   squiggly mcp                             Run the MCP server over stdio.
-  squiggly prune --older-than <duration>   Delete sessions inactive for longer than a given age.
+  squiggly prune --older-than <duration>   Delete sessions inactive for longer than the specified duration.
 `
 
 func main() {
@@ -131,7 +131,7 @@ func runMCP(args []string, stderr io.Writer) int {
 func runPrune(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("prune", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	olderThan := flags.String("older-than", "", "delete sessions inactive for longer than this duration, for example 30d, 12h, or 90m")
+	olderThan := flags.String("older-than", "", "sessions inactive for longer than this duration are deleted (e.g., 30d, 12h, 90m)")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
