@@ -1,12 +1,10 @@
 package prune
 
 import (
-	"errors"
+	"context"
+	"database/sql"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -40,37 +38,78 @@ func ParseDuration(input string) (time.Duration, error) {
 	return d, nil
 }
 
-func Run(root string, olderThan time.Duration, now time.Time, out io.Writer) error {
-	entries, err := os.ReadDir(root)
-	if errors.Is(err, fs.ErrNotExist) {
+func Run(ctx context.Context, dbPath string, olderThan time.Duration, now time.Time, out io.Writer) error {
+	exists, err := session.DBExists(dbPath)
+	if err != nil {
+		return err
+	}
+	if !exists {
 		fmt.Fprintln(out, summary(0))
 		return nil
 	}
+	db, err := session.Open(ctx, dbPath)
 	if err != nil {
-		return fmt.Errorf("read sessions directory: %w", err)
+		return err
+	}
+	defer db.Close()
+
+	deleted, err := deleteInactive(ctx, db, now.Add(-olderThan).UnixMilli())
+	if err != nil {
+		return err
+	}
+	for _, publicID := range deleted {
+		fmt.Fprintln(out, publicID)
+	}
+	fmt.Fprintln(out, summary(len(deleted)))
+	return nil
+}
+
+func deleteInactive(ctx context.Context, db *sql.DB, cutoffMillis int64) ([]string, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("prune sessions: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT s.id, s.public_id FROM sessions s
+		WHERE COALESCE((SELECT MAX(r.started_at) FROM requests r WHERE r.session_id = s.id), s.created_at) < ?
+		ORDER BY s.id`, cutoffMillis)
+	if err != nil {
+		return nil, fmt.Errorf("find inactive sessions: %w", err)
+	}
+	var ids []int64
+	var publicIDs []string
+	for rows.Next() {
+		var id int64
+		var publicID string
+		if err := rows.Scan(&id, &publicID); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("find inactive sessions: %w", err)
+		}
+		ids = append(ids, id)
+		publicIDs = append(publicIDs, publicID)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("find inactive sessions: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("find inactive sessions: %w", err)
 	}
 
-	deleted := 0
-	for _, entry := range entries {
-		match := session.DirNamePattern.FindStringSubmatch(entry.Name())
-		if match == nil || !entry.IsDir() {
-			continue
+	for i, id := range ids {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id); err != nil {
+			return nil, fmt.Errorf("delete session %s: %w", publicIDs[i], err)
 		}
-		created, err := strconv.ParseInt(match[2], 10, 64)
-		if err != nil {
-			continue
-		}
-		if now.Sub(time.Unix(created, 0)) <= olderThan {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
-			return fmt.Errorf("delete session %s: %w", match[1], err)
-		}
-		fmt.Fprintln(out, match[1])
-		deleted++
 	}
-	fmt.Fprintln(out, summary(deleted))
-	return nil
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM requests WHERE session_id IS NULL AND started_at < ?`, cutoffMillis); err != nil {
+		return nil, fmt.Errorf("delete rejected requests: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("prune sessions: %w", err)
+	}
+	return publicIDs, nil
 }
 
 func summary(count int) string {

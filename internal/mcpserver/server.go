@@ -2,13 +2,15 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/zachahn/editor/internal/agent"
 	"github.com/zachahn/editor/internal/session"
 )
 
@@ -17,14 +19,8 @@ const (
 	Version         = "0.1.0"
 )
 
-var sessionDirInPath = regexp.MustCompile(`([/\\][0-9a-f]{8})-[0-9]+`)
-
-func toolError(message string) *mcp.CallToolResult {
-	return mcp.NewToolResultError(sessionDirInPath.ReplaceAllString(message, "$1"))
-}
-
 type AgentRunner interface {
-	Run(ctx context.Context, sessionDir, systemPrompt, userMessage string) (string, error)
+	Run(ctx context.Context, in agent.RunInput) (*agent.RunResult, error)
 }
 
 type Handlers struct {
@@ -36,12 +32,12 @@ type Handlers struct {
 func New(h *Handlers) *server.MCPServer {
 	s := server.NewMCPServer("editor", Version, server.WithToolCapabilities(false), server.WithRecovery())
 
-	s.AddTool(mcp.NewTool("start_rewrite",
-		mcp.WithDescription("Start a rewriting session. The text is rewritten by an LLM agent. The result begins with a session_id line, followed by a blank line and the rewritten text. Pass the session_id to revise_rewrite to request revisions."),
+	s.AddTool(mcp.NewTool(session.ToolStartRewrite,
+		mcp.WithDescription("Start a rewriting session. The text is rewritten by an LLM agent. The result begins with a session_id line, followed by a blank line and the rewritten text. Pass the session_id to revise_rewrite to request revisions. When the run fails, the error message also begins with a session_id line, and the session may still be revised."),
 		mcp.WithString("text", mcp.Required(), mcp.MinLength(1), mcp.Description("Text to rewrite.")),
 	), h.StartRewrite)
 
-	s.AddTool(mcp.NewTool("revise_rewrite",
+	s.AddTool(mcp.NewTool(session.ToolReviseRewrite,
 		mcp.WithDescription("Revise the rewrite of an existing session with feedback. The result contains only the revised text."),
 		mcp.WithString("session_id", mcp.Required(), mcp.Pattern(`^[0-9a-f]{8}$`), mcp.Description("Session ID returned by start_rewrite.")),
 		mcp.WithString("feedback", mcp.Required(), mcp.MinLength(1), mcp.Description("Feedback on the current rewrite.")),
@@ -50,8 +46,8 @@ func New(h *Handlers) *server.MCPServer {
 	return s
 }
 
-func stringArg(req mcp.CallToolRequest, key string) (string, error) {
-	value, ok := req.GetArguments()[key]
+func stringArg(args map[string]any, key string) (string, error) {
+	value, ok := args[key]
 	if !ok {
 		return "", fmt.Errorf("missing required parameter %q", key)
 	}
@@ -65,58 +61,129 @@ func stringArg(req mcp.CallToolRequest, key string) (string, error) {
 	return str, nil
 }
 
+func encodeArguments(raw any, omit ...string) string {
+	if raw == nil {
+		return "{}"
+	}
+	if args, ok := raw.(map[string]any); ok && len(omit) > 0 {
+		kept := make(map[string]any, len(args))
+		for key, value := range args {
+			kept[key] = value
+		}
+		for _, key := range omit {
+			delete(kept, key)
+		}
+		raw = kept
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		fallback, _ := json.Marshal(map[string]string{"unencodable_arguments": fmt.Sprintf("%v", raw)})
+		return string(fallback)
+	}
+	return string(encoded)
+}
+
+func (h *Handlers) reject(ctx context.Context, tool string, req mcp.CallToolRequest, message string) *mcp.CallToolResult {
+	if err := h.Store.RecordRejected(context.WithoutCancel(ctx), tool, encodeArguments(req.Params.Arguments), message); err != nil {
+		message = errors.Join(errors.New(message), err).Error()
+	}
+	return mcp.NewToolResultError(message)
+}
+
 func (h *Handlers) StartRewrite(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	text, err := stringArg(req, "text")
+	text, err := stringArg(req.GetArguments(), "text")
 	if err != nil {
-		return toolError(err.Error()), nil
+		return h.reject(ctx, session.ToolStartRewrite, req, err.Error()), nil
 	}
 
-	sess, err := h.Store.Create(text, h.SystemPrompt)
+	sess, request, err := h.Store.Create(ctx, text, h.SystemPrompt, encodeArguments(req.Params.Arguments, "text"))
 	if err != nil {
-		return toolError("could not create session: " + err.Error()), nil
+		return h.reject(ctx, session.ToolStartRewrite, req, "could not create session: "+err.Error()), nil
 	}
 
-	unlock := h.Store.Lock(sess.ID)
+	unlock := h.Store.Lock(sess.PublicID)
 	defer unlock()
 
-	current, err := h.Runner.Run(ctx, sess.Dir, h.SystemPrompt, firstRunMessage)
-	if err != nil {
-		if removeErr := sess.Delete(); removeErr != nil {
-			err = errors.Join(err, fmt.Errorf("delete failed session: %w", removeErr))
-		}
-		return toolError(err.Error()), nil
+	prefix := fmt.Sprintf("session_id: %s\n\n", sess.PublicID)
+	current, message := h.run(ctx, sess, request, firstRunMessage, prefix)
+	if message != "" {
+		return mcp.NewToolResultError(message), nil
 	}
-	return mcp.NewToolResultText(fmt.Sprintf("session_id: %s\n\n%s", sess.ID, current)), nil
+	return mcp.NewToolResultText(prefix + current), nil
 }
 
 func (h *Handlers) ReviseRewrite(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := stringArg(req, "session_id")
+	args := req.GetArguments()
+	publicID, err := stringArg(args, "session_id")
 	if err != nil {
-		return toolError(err.Error()), nil
+		return h.reject(ctx, session.ToolReviseRewrite, req, err.Error()), nil
 	}
-	if !session.IDPattern.MatchString(id) {
-		return toolError(fmt.Sprintf("invalid session_id %q: must be 8 lowercase hexadecimal characters", id)), nil
+	if !session.IDPattern.MatchString(publicID) {
+		return h.reject(ctx, session.ToolReviseRewrite, req, fmt.Sprintf("invalid session_id %q: must be 8 lowercase hexadecimal characters", publicID)), nil
 	}
-	feedback, err := stringArg(req, "feedback")
+	feedback, err := stringArg(args, "feedback")
 	if err != nil {
-		return toolError(err.Error()), nil
+		return h.reject(ctx, session.ToolReviseRewrite, req, err.Error()), nil
 	}
 
-	unlock := h.Store.Lock(id)
+	sess, err := h.Store.Find(ctx, publicID)
+	if err != nil {
+		return h.reject(ctx, session.ToolReviseRewrite, req, err.Error()), nil
+	}
+
+	unlock := h.Store.Lock(sess.PublicID)
 	defer unlock()
 
-	sess, err := h.Store.Find(id)
+	request, err := h.Store.StartRequest(ctx, sess.ID, session.ToolReviseRewrite, encodeArguments(req.Params.Arguments))
 	if err != nil {
-		return toolError(err.Error()), nil
-	}
-	systemPrompt, err := sess.ReadFile(session.SystemFile)
-	if err != nil {
-		return toolError(err.Error()), nil
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	current, err := h.Runner.Run(ctx, sess.Dir, systemPrompt, "Feedback on CURRENT.txt:\n\n"+feedback)
-	if err != nil {
-		return toolError(err.Error()), nil
+	current, message := h.run(ctx, sess, request, "Feedback on CURRENT.txt:\n\n"+feedback, "")
+	if message != "" {
+		return mcp.NewToolResultError(message), nil
 	}
 	return mcp.NewToolResultText(current), nil
+}
+
+func (h *Handlers) run(ctx context.Context, sess *session.Session, request *session.Request, userMessage, errorPrefix string) (string, string) {
+	snapshot, err := h.Store.Snapshot(ctx, sess.ID)
+	if err != nil {
+		return "", h.fail(ctx, sess, request, nil, err, errorPrefix)
+	}
+
+	runCtx, cancel := context.WithDeadline(ctx, request.Deadline)
+	defer cancel()
+	result, err := h.Runner.Run(runCtx, agent.RunInput{
+		Snapshot:     snapshot,
+		SystemPrompt: sess.SystemPrompt,
+		UserMessage:  userMessage,
+		Record: func(ctx context.Context, msg *schema.Message) error {
+			record, err := agent.TranscriptMessage(msg)
+			if err != nil {
+				return err
+			}
+			return h.Store.AppendMessage(ctx, request.ID, record)
+		},
+	})
+	var changed map[string]string
+	if result != nil {
+		changed = result.Changed
+	}
+	if err != nil {
+		return "", h.fail(ctx, sess, request, changed, err, errorPrefix)
+	}
+
+	if err := h.Store.Commit(context.WithoutCancel(ctx), sess.ID, request.ID, snapshot.Version, changed); err != nil {
+		return "", h.fail(ctx, sess, request, changed, err, errorPrefix)
+	}
+	return result.Current, ""
+}
+
+func (h *Handlers) fail(ctx context.Context, sess *session.Session, request *session.Request, changed map[string]string, runErr error, prefix string) string {
+	message := prefix + runErr.Error()
+	if err := h.Store.Fail(context.WithoutCancel(ctx), sess.ID, request.ID, changed, message); err != nil {
+		return prefix + errors.Join(runErr, err).Error()
+	}
+	return message
 }

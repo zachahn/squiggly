@@ -3,12 +3,7 @@ package agent
 import (
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"regexp"
-	"sort"
-	"strings"
 	"sync"
 
 	"github.com/zachahn/editor/internal/session"
@@ -19,13 +14,19 @@ var allowedName = regexp.MustCompile(`\A(ORIGINAL\.txt|CURRENT\.txt|SCRATCH-[0-9
 var errMissingFile = errors.New("file does not exist")
 
 type Overlay struct {
-	dir     string
+	base    map[string]session.BaseFile
 	mu      sync.Mutex
 	changed map[string]string
 }
 
-func NewOverlay(dir string) *Overlay {
-	return &Overlay{dir: dir, changed: map[string]string{}}
+func NewOverlay(snapshot *session.Snapshot) *Overlay {
+	base := map[string]session.BaseFile{}
+	if snapshot != nil {
+		for name, file := range snapshot.Files {
+			base[name] = file
+		}
+	}
+	return &Overlay{base: base, changed: map[string]string{}}
 }
 
 func checkName(name string) error {
@@ -35,12 +36,18 @@ func checkName(name string) error {
 	return nil
 }
 
-func checkWritable(name string) error {
+func (o *Overlay) CheckWritable(name string) error {
 	if err := checkName(name); err != nil {
 		return err
 	}
-	if name == session.OriginalFile {
-		return fmt.Errorf("%s is read-only", session.OriginalFile)
+	if file, ok := o.base[name]; ok {
+		if !file.Writable {
+			return fmt.Errorf("%s is read-only", name)
+		}
+		return nil
+	}
+	if !session.IsScratchName(name) {
+		return fmt.Errorf("%s cannot be created; only SCRATCH-<n>.txt files may be created", name)
 	}
 	return nil
 }
@@ -50,35 +57,18 @@ func (o *Overlay) Read(name string) (string, error) {
 		return "", err
 	}
 	o.mu.Lock()
-	content, ok := o.changed[name]
-	o.mu.Unlock()
-	if ok {
+	defer o.mu.Unlock()
+	if content, ok := o.changed[name]; ok {
 		return content, nil
 	}
-	return o.readDisk(name)
-}
-
-func (o *Overlay) readDisk(name string) (string, error) {
-	path := filepath.Join(o.dir, name)
-	info, err := os.Lstat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("%s: %w", name, errMissingFile)
+	if file, ok := o.base[name]; ok && file.HasVersion {
+		return file.Content, nil
 	}
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", name, err)
-	}
-	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("%s is not a regular file", name)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", name, err)
-	}
-	return string(data), nil
+	return "", fmt.Errorf("%s: %w", name, errMissingFile)
 }
 
 func (o *Overlay) Write(name, content string) error {
-	if err := checkWritable(name); err != nil {
+	if err := o.CheckWritable(name); err != nil {
 		return err
 	}
 	o.mu.Lock()
@@ -87,63 +77,32 @@ func (o *Overlay) Write(name, content string) error {
 	return nil
 }
 
-func (o *Overlay) Names() ([]string, error) {
+func (o *Overlay) Names() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	set := map[string]bool{}
-	entries, err := os.ReadDir(o.dir)
-	if err != nil {
-		return nil, fmt.Errorf("list session: %w", err)
-	}
-	for _, entry := range entries {
-		if allowedName.MatchString(entry.Name()) && entry.Type().IsRegular() {
-			set[entry.Name()] = true
+	for name, file := range o.base {
+		if file.HasVersion {
+			set[name] = true
 		}
 	}
-	o.mu.Lock()
 	for name := range o.changed {
 		set[name] = true
 	}
-	o.mu.Unlock()
-
 	names := make([]string, 0, len(set))
 	for name := range set {
 		names = append(names, name)
 	}
-	sort.Slice(names, func(i, j int) bool { return fileOrder(names[i]) < fileOrder(names[j]) })
-	return names, nil
+	session.SortFileNames(names)
+	return names
 }
 
-func fileOrder(name string) string {
-	switch name {
-	case session.OriginalFile:
-		return "0"
-	case session.CurrentFile:
-		return "1"
-	}
-	digits := strings.TrimSuffix(strings.TrimPrefix(name, "SCRATCH-"), ".txt")
-	return fmt.Sprintf("2%020s", digits)
-}
-
-func (o *Overlay) Commit() error {
+func (o *Overlay) Changed() map[string]string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-
-	var scratch []string
-	for name := range o.changed {
-		if name != session.CurrentFile {
-			scratch = append(scratch, name)
-		}
+	changed := make(map[string]string, len(o.changed))
+	for name, content := range o.changed {
+		changed[name] = content
 	}
-	sort.Slice(scratch, func(i, j int) bool { return fileOrder(scratch[i]) < fileOrder(scratch[j]) })
-
-	for _, name := range scratch {
-		if err := session.WriteFileAtomic(o.dir, name, o.changed[name]); err != nil {
-			return err
-		}
-	}
-	if content, ok := o.changed[session.CurrentFile]; ok {
-		if err := session.WriteFileAtomic(o.dir, session.CurrentFile, content); err != nil {
-			return err
-		}
-	}
-	return nil
+	return changed
 }

@@ -23,7 +23,7 @@ import (
 const usage = `Usage:
   editor init                            Interactively create or update the config file.
   editor mcp                             Run the MCP server over stdio.
-  editor prune --older-than <duration>   Delete sessions older than a given age.
+  editor prune --older-than <duration>   Delete sessions inactive for longer than a given age.
 `
 
 func main() {
@@ -93,7 +93,7 @@ func runMCP(args []string, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "editor mcp: %v\nRun `editor init` to create a valid config file.\n", err)
 		return 1
 	}
-	root, err := session.Root()
+	dbPath, err := session.DBPath()
 	if err != nil {
 		fmt.Fprintf(stderr, "editor mcp: %v\n", err)
 		return 1
@@ -103,9 +103,21 @@ func runMCP(args []string, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "editor mcp: create chat model: %v\nRun `editor init` to create a valid config file.\n", err)
 		return 1
 	}
+	db, err := session.Open(context.Background(), dbPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "editor mcp: %v\n", err)
+		return 1
+	}
+	defer db.Close()
 
+	store := session.NewStore(db, session.RequestSettings{
+		Platform:              cfg.Platform,
+		Model:                 cfg.Model,
+		MaxSteps:              cfg.MaxSteps,
+		RequestTimeoutSeconds: cfg.RequestTimeoutSeconds,
+	})
 	srv := mcpserver.New(&mcpserver.Handlers{
-		Store:        session.NewStore(root),
+		Store:        store,
 		Runner:       &agent.Runner{Model: chatModel, MaxSteps: cfg.MaxSteps},
 		SystemPrompt: cfg.SystemPrompt,
 	})
@@ -119,7 +131,7 @@ func runMCP(args []string, stderr io.Writer) int {
 func runPrune(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("prune", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	olderThan := flags.String("older-than", "", "delete sessions older than this duration, for example 30d, 12h, or 90m")
+	olderThan := flags.String("older-than", "", "delete sessions inactive for longer than this duration, for example 30d, 12h, or 90m")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -132,12 +144,12 @@ func runPrune(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "editor prune: %v\n", err)
 		return 2
 	}
-	root, err := session.Root()
+	dbPath, err := session.DBPath()
 	if err != nil {
 		fmt.Fprintf(stderr, "editor prune: %v\n", err)
 		return 1
 	}
-	if err := prune.Run(root, duration, time.Now(), stdout); err != nil {
+	if err := prune.Run(context.Background(), dbPath, duration, time.Now(), stdout); err != nil {
 		fmt.Fprintf(stderr, "editor prune: %v\n", err)
 		return 1
 	}

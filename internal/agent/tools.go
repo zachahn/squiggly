@@ -76,12 +76,8 @@ func listFilesTool(overlay *Overlay) *fileTool {
 			Desc: "List the session files, one per line, each followed by its size in bytes.",
 		},
 		run: func(json.RawMessage) (string, error) {
-			names, err := overlay.Names()
-			if err != nil {
-				return "", err
-			}
 			var b strings.Builder
-			for _, name := range names {
+			for _, name := range overlay.Names() {
 				content, err := overlay.Read(name)
 				if err != nil {
 					return "", err
@@ -118,7 +114,7 @@ func writeFileTool(overlay *Overlay) *fileTool {
 	return &fileTool{
 		info: &schema.ToolInfo{
 			Name: "write_file",
-			Desc: "Replace the full contents of a session file. SCRATCH-<n>.txt files are created when absent. ORIGINAL.txt is read-only.",
+			Desc: "Replace the full contents of a session file. SCRATCH-<n>.txt files are created when absent. Read-only files such as ORIGINAL.txt cannot be written.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"name":    nameParam(),
 				"content": {Type: schema.String, Desc: "New full contents of the file.", Required: true},
@@ -132,7 +128,7 @@ func writeFileTool(overlay *Overlay) *fileTool {
 			if err := decodeArgs(raw, &args); err != nil {
 				return "", err
 			}
-			if err := checkWritable(args.Name); err != nil {
+			if err := overlay.CheckWritable(args.Name); err != nil {
 				return "", err
 			}
 			content, err := requireString(args.Content, "content")
@@ -163,7 +159,7 @@ func editFileTool(overlay *Overlay) *fileTool {
 	return &fileTool{
 		info: &schema.ToolInfo{
 			Name: "edit_file",
-			Desc: "Replace the single occurrence of old_string in a session file with new_string. The edit is refused when old_string is empty or does not occur exactly once. ORIGINAL.txt is read-only.",
+			Desc: "Replace the single occurrence of old_string in a session file with new_string. The edit is refused when old_string is empty or does not occur exactly once. Read-only files such as ORIGINAL.txt cannot be edited.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"name":       nameParam(),
 				"old_string": {Type: schema.String, Desc: "Exact text to replace. Must occur exactly once.", Required: true},
@@ -179,7 +175,7 @@ func editFileTool(overlay *Overlay) *fileTool {
 			if err := decodeArgs(raw, &args); err != nil {
 				return "", err
 			}
-			if err := checkWritable(args.Name); err != nil {
+			if err := overlay.CheckWritable(args.Name); err != nil {
 				return "", err
 			}
 			oldString, err := requireString(args.OldString, "old_string")
@@ -242,10 +238,7 @@ func grepTool(overlay *Overlay) *fileTool {
 				}
 				names = []string{*args.Name}
 			} else {
-				names, err = overlay.Names()
-				if err != nil {
-					return "", err
-				}
+				names = overlay.Names()
 			}
 
 			var b strings.Builder

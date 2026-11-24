@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +16,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/zachahn/editor/internal/config"
+	"github.com/zachahn/editor/internal/session"
 )
 
 type scriptedModel struct {
@@ -64,24 +63,11 @@ func done() *schema.Message {
 	return schema.AssistantMessage("finished", nil)
 }
 
-func newSessionDir(t *testing.T, original string) string {
-	t.Helper()
-	dir := t.TempDir()
-	for name, content := range map[string]string{"ORIGINAL.txt": original, "CURRENT.txt": original, "SYSTEM.txt": "sys"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return dir
-}
-
-func readFile(t *testing.T, dir, name string) string {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(dir, name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(data)
+func newSnapshot(original string) *session.Snapshot {
+	return &session.Snapshot{Files: map[string]session.BaseFile{
+		session.OriginalFile: {Writable: false, Content: original, HasVersion: true},
+		session.CurrentFile:  {Writable: true, Content: original, HasVersion: true},
+	}}
 }
 
 func toolResults(req []*schema.Message) []string {
@@ -94,30 +80,30 @@ func toolResults(req []*schema.Message) []string {
 	return results
 }
 
-func TestRunCommitsOverlay(t *testing.T) {
-	dir := newSessionDir(t, "hello world")
+func input(snapshot *session.Snapshot, systemPrompt, userMessage string) RunInput {
+	return RunInput{Snapshot: snapshot, SystemPrompt: systemPrompt, UserMessage: userMessage}
+}
+
+func TestRunReturnsOverlayChanges(t *testing.T) {
+	snapshot := newSnapshot("hello world")
 	m := &scriptedModel{replies: []*schema.Message{
 		call("write_file", map[string]any{"name": "SCRATCH-1.txt", "content": "notes"}),
 		call("edit_file", map[string]any{"name": "CURRENT.txt", "old_string": "world", "new_string": "there"}),
 		done(),
 	}}
 	r := &Runner{Model: m, MaxSteps: 5}
-	got, err := r.Run(context.Background(), dir, "be concise", "Rewrite CURRENT.txt.")
+	got, err := r.Run(context.Background(), input(snapshot, "be concise", "Rewrite CURRENT.txt."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "hello there" {
-		t.Fatalf("result = %q", got)
+	if got.Current != "hello there" {
+		t.Fatalf("result = %q", got.Current)
 	}
-	if readFile(t, dir, "CURRENT.txt") != "hello there" || readFile(t, dir, "SCRATCH-1.txt") != "notes" {
-		t.Fatal("files were not committed")
+	if len(got.Changed) != 2 || got.Changed["CURRENT.txt"] != "hello there" || got.Changed["SCRATCH-1.txt"] != "notes" {
+		t.Fatalf("changed = %v", got.Changed)
 	}
-	info, err := os.Stat(filepath.Join(dir, "SCRATCH-1.txt"))
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("scratch mode = %v, %v", info.Mode().Perm(), err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "CURRENT.txt.tmp")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("temporary file left behind")
+	if snapshot.Files[session.CurrentFile].Content != "hello world" {
+		t.Fatal("base snapshot was modified")
 	}
 	system := m.requests[0][0]
 	if system.Role != schema.System || !strings.HasPrefix(system.Content, Preamble) || !strings.HasSuffix(system.Content, "be concise") {
@@ -128,53 +114,126 @@ func TestRunCommitsOverlay(t *testing.T) {
 	}
 }
 
+func TestRunRecordsTranscriptAsProduced(t *testing.T) {
+	reply := call("read_file", map[string]any{"name": "CURRENT.txt"})
+	reply.ReasoningContent = "look first"
+	reply.ResponseMeta = &schema.ResponseMeta{Usage: &schema.TokenUsage{PromptTokens: 10, CompletionTokens: 2, TotalTokens: 12}}
+	final := schema.AssistantMessage("finished", nil)
+	m := &scriptedModel{replies: []*schema.Message{reply, final}}
+
+	var recorded []session.Message
+	in := input(newSnapshot("text"), "p", "go")
+	in.Record = func(_ context.Context, msg *schema.Message) error {
+		record, err := TranscriptMessage(msg)
+		recorded = append(recorded, record)
+		return err
+	}
+	if _, err := (&Runner{Model: m, MaxSteps: 5}).Run(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+
+	var roles []string
+	for _, msg := range recorded {
+		roles = append(roles, msg.Role)
+	}
+	if strings.Join(roles, ",") != "system,user,assistant,tool,assistant" {
+		t.Fatalf("roles = %v", roles)
+	}
+	assistant := recorded[2]
+	if assistant.Reasoning != "look first" || assistant.ToolCalls == nil || *assistant.TotalTokens != 12 || *assistant.PromptTokens != 10 || *assistant.CompletionTokens != 2 {
+		t.Errorf("assistant = %+v", assistant)
+	}
+	var calls []map[string]string
+	json.Unmarshal([]byte(*assistant.ToolCalls), &calls)
+	if len(calls) != 1 || calls[0]["name"] != "read_file" || calls[0]["arguments"] != `{"name":"CURRENT.txt"}` || calls[0]["id"] == "" {
+		t.Errorf("tool_calls = %s", *assistant.ToolCalls)
+	}
+	tool := recorded[3]
+	if tool.Content != "text" || *tool.ToolName != "read_file" || *tool.ToolCallID != calls[0]["id"] || tool.ToolCalls != nil || tool.TotalTokens != nil {
+		t.Errorf("tool = %+v", tool)
+	}
+	if last := recorded[4]; last.Content != "finished" || last.ToolCalls != nil || last.TotalTokens != nil {
+		t.Errorf("final = %+v", last)
+	}
+	if recorded[0].ToolCallID != nil || recorded[1].ToolName != nil {
+		t.Errorf("system/user tool fields = %+v %+v", recorded[0], recorded[1])
+	}
+}
+
+func TestRunFailsWhenRecordingFails(t *testing.T) {
+	m := &scriptedModel{replies: []*schema.Message{done()}}
+	in := input(newSnapshot("text"), "p", "go")
+	in.Record = func(context.Context, *schema.Message) error { return errors.New("disk full") }
+	_, err := (&Runner{Model: m, MaxSteps: 5}).Run(context.Background(), in)
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+type blockingModel struct{ scriptedModel }
+
+func (m *blockingModel) Generate(ctx context.Context, _ []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (m *blockingModel) WithTools([]*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return m, nil
+}
+
+func TestRunFailsAtDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err := (&Runner{Model: &blockingModel{}, MaxSteps: 5}).Run(ctx, input(newSnapshot("text"), "p", "go"))
+	if !errors.Is(err, ErrDeadlineReached) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestRunStepLimit(t *testing.T) {
 	read := call("read_file", map[string]any{"name": "CURRENT.txt"})
 
 	t.Run("finishing on the last allowed step succeeds", func(t *testing.T) {
-		dir := newSessionDir(t, "text")
 		m := &scriptedModel{replies: []*schema.Message{read, read, done()}}
 		r := &Runner{Model: m, MaxSteps: 3}
-		if _, err := r.Run(context.Background(), dir, "p", "go"); err != nil {
+		if _, err := r.Run(context.Background(), input(newSnapshot("text"), "p", "go")); err != nil {
 			t.Fatal(err)
 		}
 	})
 
-	t.Run("exceeding the limit fails and discards the overlay", func(t *testing.T) {
-		dir := newSessionDir(t, "text")
+	t.Run("exceeding the limit fails and returns the overlay changes", func(t *testing.T) {
 		write := call("write_file", map[string]any{"name": "CURRENT.txt", "content": "changed"})
 		m := &scriptedModel{replies: []*schema.Message{write, read, read, done()}}
 		r := &Runner{Model: m, MaxSteps: 3}
-		_, err := r.Run(context.Background(), dir, "p", "go")
+		got, err := r.Run(context.Background(), input(newSnapshot("text"), "p", "go"))
 		if err == nil || !strings.Contains(err.Error(), "max_steps") {
 			t.Fatalf("err = %v", err)
 		}
 		if m.calls != 3 {
 			t.Fatalf("model calls = %d, want 3", m.calls)
 		}
-		if readFile(t, dir, "CURRENT.txt") != "text" {
-			t.Fatal("disk was modified by a failed run")
+		if got.Changed["CURRENT.txt"] != "changed" {
+			t.Fatalf("changed = %v", got.Changed)
 		}
 	})
 }
 
 func TestRunEmptyCurrentFails(t *testing.T) {
-	dir := newSessionDir(t, "text")
 	m := &scriptedModel{replies: []*schema.Message{
 		call("write_file", map[string]any{"name": "CURRENT.txt", "content": "  \n"}),
 		done(),
 	}}
 	r := &Runner{Model: m, MaxSteps: 5}
-	if _, err := r.Run(context.Background(), dir, "p", "go"); !errors.Is(err, ErrEmptyResult) {
+	got, err := r.Run(context.Background(), input(newSnapshot("text"), "p", "go"))
+	if !errors.Is(err, ErrEmptyResult) {
 		t.Fatalf("err = %v", err)
 	}
-	if readFile(t, dir, "CURRENT.txt") != "text" {
-		t.Fatal("disk was modified by a failed run")
+	if got.Changed["CURRENT.txt"] != "  \n" {
+		t.Fatalf("changed = %v", got.Changed)
 	}
 }
 
 func TestRunToolErrorsDoNotFailRun(t *testing.T) {
-	dir := newSessionDir(t, "a a b")
 	m := &scriptedModel{replies: []*schema.Message{
 		call("read_file", map[string]any{"name": "../SYSTEM.txt"}),
 		call("write_file", map[string]any{"name": "ORIGINAL.txt", "content": "x"}),
@@ -184,7 +243,7 @@ func TestRunToolErrorsDoNotFailRun(t *testing.T) {
 		done(),
 	}}
 	r := &Runner{Model: m, MaxSteps: 10}
-	if _, err := r.Run(context.Background(), dir, "p", "go"); err != nil {
+	if _, err := r.Run(context.Background(), input(newSnapshot("a a b"), "p", "go")); err != nil {
 		t.Fatal(err)
 	}
 	results := toolResults(m.requests[len(m.requests)-1])

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,10 +10,13 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/ollama"
 	"github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/flow/agent"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+	ub "github.com/cloudwego/eino/utils/callbacks"
 
 	"github.com/zachahn/editor/internal/config"
 	"github.com/zachahn/editor/internal/session"
@@ -64,16 +68,46 @@ type Runner struct {
 	MaxSteps int
 }
 
-var ErrEmptyResult = errors.New("the agent run ended with an empty CURRENT.txt")
+type RunInput struct {
+	Snapshot     *session.Snapshot
+	SystemPrompt string
+	UserMessage  string
+	Record       func(context.Context, *schema.Message) error
+}
+
+type RunResult struct {
+	Current string
+	Changed map[string]string
+}
+
+var (
+	ErrEmptyResult      = errors.New("the agent run ended with an empty CURRENT.txt")
+	ErrDeadlineReached  = errors.New("the agent run reached its deadline before finishing")
+	errRecordingStopped = errors.New("recording the transcript failed")
+)
 
 func graphStepLimit(maxSteps int) int {
 	return 2 * maxSteps
 }
 
-func (r *Runner) Run(ctx context.Context, sessionDir, systemPrompt, userMessage string) (string, error) {
-	overlay := NewOverlay(sessionDir)
+func (r *Runner) Run(ctx context.Context, in RunInput) (*RunResult, error) {
+	overlay := NewOverlay(in.Snapshot)
+	result := &RunResult{}
+	defer func() { result.Changed = overlay.Changed() }()
 
-	agent, err := react.NewAgent(ctx, &react.AgentConfig{
+	runCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	recordCtx := context.WithoutCancel(ctx)
+	record := func(msg *schema.Message) {
+		if in.Record == nil || errors.Is(context.Cause(runCtx), errRecordingStopped) {
+			return
+		}
+		if err := in.Record(recordCtx, msg); err != nil {
+			cancel(fmt.Errorf("%w: %w", errRecordingStopped, err))
+		}
+	}
+
+	reactAgent, err := react.NewAgent(runCtx, &react.AgentConfig{
 		ToolCallingModel: r.Model,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools:               NewTools(overlay),
@@ -85,29 +119,101 @@ func (r *Runner) Run(ctx context.Context, sessionDir, systemPrompt, userMessage 
 		MaxStep: graphStepLimit(r.MaxSteps),
 	})
 	if err != nil {
-		return "", fmt.Errorf("create agent: %w", err)
+		return result, fmt.Errorf("create agent: %w", err)
 	}
 
 	messages := []*schema.Message{
-		schema.SystemMessage(Preamble + systemPrompt),
-		schema.UserMessage(userMessage),
+		schema.SystemMessage(Preamble + in.SystemPrompt),
+		schema.UserMessage(in.UserMessage),
 	}
-	if _, err := agent.Generate(ctx, messages); err != nil {
+	for _, msg := range messages {
+		record(msg)
+	}
+	if cause := context.Cause(runCtx); cause != nil {
+		return result, cause
+	}
+
+	_, err = reactAgent.Generate(runCtx, messages, transcriptOption(record))
+	if cause := context.Cause(runCtx); errors.Is(cause, errRecordingStopped) {
+		return result, cause
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return result, ErrDeadlineReached
+	}
+	if err != nil {
 		if errors.Is(err, compose.ErrExceedMaxSteps) {
-			return "", fmt.Errorf("the agent run exceeded max_steps (%d) without finishing", r.MaxSteps)
+			return result, fmt.Errorf("the agent run exceeded max_steps (%d) without finishing", r.MaxSteps)
 		}
-		return "", fmt.Errorf("agent run failed: %w", err)
+		return result, fmt.Errorf("agent run failed: %w", err)
 	}
 
 	current, err := overlay.Read(session.CurrentFile)
 	if err != nil {
-		return "", fmt.Errorf("read CURRENT.txt: %w", err)
+		return result, fmt.Errorf("read CURRENT.txt: %w", err)
 	}
 	if strings.TrimSpace(current) == "" {
-		return "", ErrEmptyResult
+		return result, ErrEmptyResult
 	}
-	if err := overlay.Commit(); err != nil {
-		return "", fmt.Errorf("commit session files: %w", err)
+	result.Current = current
+	return result, nil
+}
+
+func transcriptOption(record func(*schema.Message)) agent.AgentOption {
+	handler := ub.NewHandlerHelper().
+		ChatModel(&ub.ModelCallbackHandler{
+			OnEnd: func(ctx context.Context, _ *callbacks.RunInfo, output *model.CallbackOutput) context.Context {
+				if output != nil && output.Message != nil {
+					record(output.Message)
+				}
+				return ctx
+			},
+		}).
+		ToolsNode(&ub.ToolsNodeCallbackHandlers{
+			OnEnd: func(ctx context.Context, _ *callbacks.RunInfo, output []*schema.Message) context.Context {
+				for _, msg := range output {
+					record(msg)
+				}
+				return ctx
+			},
+		}).
+		Handler()
+	return agent.WithComposeOptions(compose.WithCallbacks(handler))
+}
+
+type transcriptToolCall struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+func TranscriptMessage(msg *schema.Message) (session.Message, error) {
+	record := session.Message{
+		Role:      string(msg.Role),
+		Content:   msg.Content,
+		Reasoning: msg.ReasoningContent,
 	}
-	return current, nil
+	switch msg.Role {
+	case schema.Assistant:
+		if len(msg.ToolCalls) > 0 {
+			calls := make([]transcriptToolCall, len(msg.ToolCalls))
+			for i, call := range msg.ToolCalls {
+				calls[i] = transcriptToolCall{ID: call.ID, Name: call.Function.Name, Arguments: call.Function.Arguments}
+			}
+			encoded, err := json.Marshal(calls)
+			if err != nil {
+				return record, fmt.Errorf("encode tool calls: %w", err)
+			}
+			toolCalls := string(encoded)
+			record.ToolCalls = &toolCalls
+		}
+		if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
+			usage := msg.ResponseMeta.Usage
+			prompt, completion, total := int64(usage.PromptTokens), int64(usage.CompletionTokens), int64(usage.TotalTokens)
+			record.PromptTokens, record.CompletionTokens, record.TotalTokens = &prompt, &completion, &total
+		}
+	case schema.Tool:
+		callID, toolName := msg.ToolCallID, msg.ToolName
+		record.ToolCallID, record.ToolName = &callID, &toolName
+	}
+	return record, nil
 }

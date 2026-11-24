@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/components/tool"
+
+	"github.com/zachahn/editor/internal/session"
 )
 
 func invoke(t *testing.T, tools []tool.BaseTool, name string, args map[string]any) string {
@@ -30,8 +32,9 @@ func invoke(t *testing.T, tools []tool.BaseTool, name string, args map[string]an
 }
 
 func TestTools(t *testing.T) {
-	dir := newSessionDir(t, "one\ntwo\nthree\n")
-	overlay := NewOverlay(dir)
+	snapshot := newSnapshot("one\ntwo\nthree\n")
+	snapshot.Files["SCRATCH-5.txt"] = session.BaseFile{Writable: true}
+	overlay := NewOverlay(snapshot)
 	tools := NewTools(overlay)
 
 	if got := invoke(t, tools, "write_file", map[string]any{"name": "SCRATCH-10.txt", "content": "two notes"}); strings.HasPrefix(got, "error") {
@@ -42,8 +45,8 @@ func TestTools(t *testing.T) {
 	if got, want := invoke(t, tools, "list_files", nil), "ORIGINAL.txt 14\nCURRENT.txt 14\nSCRATCH-2.txt 0\nSCRATCH-10.txt 9\n"; got != want {
 		t.Errorf("list_files = %q, want %q", got, want)
 	}
-	if got := readFile(t, dir, "CURRENT.txt"); got != "one\ntwo\nthree\n" {
-		t.Errorf("disk changed during run: %q", got)
+	if got := snapshot.Files["CURRENT.txt"].Content; got != "one\ntwo\nthree\n" {
+		t.Errorf("base snapshot changed during run: %q", got)
 	}
 
 	if got, want := invoke(t, tools, "grep", map[string]any{"pattern": "two"}), "ORIGINAL.txt:2:two\nCURRENT.txt:2:two\nSCRATCH-10.txt:1:two notes\n"; got != want {
@@ -88,6 +91,29 @@ func TestTools(t *testing.T) {
 	}
 	if got := invoke(t, tools, "write_file", map[string]any{"name": "CURRENT.txt"}); !strings.Contains(got, "content") {
 		t.Errorf("write without content = %q", got)
+	}
+	if got := invoke(t, tools, "read_file", map[string]any{"name": "SCRATCH-5.txt"}); !strings.Contains(got, "does not exist") {
+		t.Errorf("read scratch without a current version = %q", got)
+	}
+	if got := invoke(t, tools, "write_file", map[string]any{"name": "SCRATCH-5.txt", "content": "again"}); strings.HasPrefix(got, "error") {
+		t.Errorf("rewrite scratch without a current version = %q", got)
+	}
+}
+
+func TestWritableFlagComesFromSnapshot(t *testing.T) {
+	snapshot := newSnapshot("text")
+	snapshot.Files["SCRATCH-1.txt"] = session.BaseFile{Writable: false, Content: "locked", HasVersion: true}
+	tools := NewTools(NewOverlay(snapshot))
+	if got := invoke(t, tools, "write_file", map[string]any{"name": "SCRATCH-1.txt", "content": "x"}); !strings.Contains(got, "read-only") {
+		t.Errorf("write read-only scratch = %q", got)
+	}
+	if got := invoke(t, tools, "edit_file", map[string]any{"name": "SCRATCH-1.txt", "old_string": "locked", "new_string": "x"}); !strings.Contains(got, "read-only") {
+		t.Errorf("edit read-only scratch = %q", got)
+	}
+
+	withoutCurrent := &session.Snapshot{Files: map[string]session.BaseFile{}}
+	if got := invoke(t, NewTools(NewOverlay(withoutCurrent)), "write_file", map[string]any{"name": "CURRENT.txt", "content": "x"}); !strings.Contains(got, "cannot be created") {
+		t.Errorf("create CURRENT.txt = %q", got)
 	}
 }
 

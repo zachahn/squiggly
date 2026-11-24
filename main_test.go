@@ -17,6 +17,8 @@ import (
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/zachahn/editor/internal/session"
 )
 
 func buildBinary(t *testing.T) string {
@@ -146,12 +148,18 @@ func TestMCPEndToEnd(t *testing.T) {
 		t.Errorf("Authorization = %q", fake.auth[0])
 	}
 
-	matches, _ := filepath.Glob(filepath.Join(stateHome, "editor", "sessions", id+"-*"))
-	if len(matches) != 1 {
-		t.Fatalf("session dirs = %v", matches)
+	dbPath := filepath.Join(stateHome, "editor", "editor.db")
+	if info, err := os.Stat(dbPath); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("database = %v, %v", info, err)
 	}
-	if data, _ := os.ReadFile(filepath.Join(matches[0], "SYSTEM.txt")); string(data) != "Be concise." {
-		t.Errorf("SYSTEM.txt = %q", data)
+	db, err := session.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var systemPrompt string
+	if err := db.QueryRow(`SELECT system_prompt FROM sessions WHERE public_id = ?`, id).Scan(&systemPrompt); err != nil || systemPrompt != "Be concise." {
+		t.Errorf("system_prompt = %q, %v", systemPrompt, err)
 	}
 
 	fake.mu.Lock()
@@ -184,9 +192,32 @@ func TestMCPEndToEnd(t *testing.T) {
 	if err != nil || !res.IsError {
 		t.Fatalf("unreachable platform result = %+v, %v", res, err)
 	}
-	entries, _ := os.ReadDir(filepath.Join(stateHome, "editor", "sessions"))
-	if len(entries) != 1 {
-		t.Errorf("failed start left sessions: %v", entries)
+	failedID := strings.TrimPrefix(strings.SplitN(callText(t, res), "\n", 2)[0], "session_id: ")
+	if len(failedID) != 8 || failedID == id {
+		t.Errorf("failed start message = %q", callText(t, res))
+	}
+
+	var summary []string
+	rows, err := db.Query(`SELECT r.tool, r.status, COALESCE(s.public_id, ''), (SELECT COUNT(*) FROM messages m WHERE m.request_id = r.id)
+		FROM requests r LEFT JOIN sessions s ON s.id = r.session_id ORDER BY r.id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var tool, status, publicID string
+		var messages int
+		rows.Scan(&tool, &status, &publicID, &messages)
+		summary = append(summary, fmt.Sprintf("%s %s %v %d", tool, status, publicID == id, messages))
+	}
+	rows.Close()
+	want := []string{
+		"start_rewrite ok true 5",
+		"revise_rewrite ok true 5",
+		"revise_rewrite error false 0",
+		"start_rewrite error false 2",
+	}
+	if strings.Join(summary, "\n") != strings.Join(want, "\n") {
+		t.Errorf("requests =\n%s\nwant\n%s", strings.Join(summary, "\n"), strings.Join(want, "\n"))
 	}
 	if _, err := c.ListTools(ctx, mcp.ListToolsRequest{}); err != nil {
 		t.Fatalf("server stopped after tool error: %v", err)
@@ -223,5 +254,19 @@ func TestInitRejectsNonTerminal(t *testing.T) {
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err == nil || !strings.Contains(stderr.String(), "terminal") {
 		t.Fatalf("err = %v, stderr = %q", err, stderr.String())
+	}
+}
+
+func TestPruneMissingDatabaseCreatesNothing(t *testing.T) {
+	bin := buildBinary(t)
+	stateHome := t.TempDir()
+	cmd := exec.Command(bin, "prune", "--older-than", "30d")
+	cmd.Env = append(os.Environ(), "XDG_STATE_HOME="+stateHome)
+	out, err := cmd.Output()
+	if err != nil || string(out) != "Deleted 0 sessions.\n" {
+		t.Fatalf("out = %q, err = %v", out, err)
+	}
+	if entries, _ := os.ReadDir(stateHome); len(entries) != 0 {
+		t.Fatalf("state directory = %v", entries)
 	}
 }
