@@ -17,6 +17,8 @@ import (
 const (
 	firstRunMessage = "Rewrite CURRENT.txt."
 	Version         = "0.1.0"
+	Instructions    = "Rewrite prose using Squiggly through a back-and-forth with a rewriting agent. A single `start_rewrite` call results in an initial draft, not a final result. Compare each draft to your original text and your intent for missing details, altered meaning, incorrect tone, or unwanted additions. Use `revise_rewrite` with specific feedback and repeat until the draft is right. Accept a draft without revision only if it has no remaining issues."
+	ReviewReminder  = "Review this draft against your original text and call revise_rewrite with specific feedback until the draft is right."
 )
 
 type AgentRunner interface {
@@ -30,10 +32,10 @@ type Handlers struct {
 }
 
 func New(h *Handlers) *server.MCPServer {
-	s := server.NewMCPServer("squiggly", Version, server.WithToolCapabilities(false), server.WithRecovery())
+	s := server.NewMCPServer("squiggly", Version, server.WithToolCapabilities(false), server.WithRecovery(), server.WithInstructions(Instructions))
 
 	s.AddTool(mcp.NewTool(session.ToolStartRewrite,
-		mcp.WithDescription("Start a rewriting session. The text is rewritten by an LLM agent. The result begins with a session_id line, followed by a blank line and the rewritten text. Pass the session_id to revise_rewrite to request revisions. When the run fails, the error message also begins with a session_id line, and the session may still be revised."),
+		mcp.WithDescription("Start a rewriting session. The text is rewritten by an LLM agent into an initial draft, not a final result. The result begins with a session_id line and a review reminder line, followed by a blank line and the draft. Review the draft against the original text, and pass the session_id to revise_rewrite with feedback until the draft is right. When the run fails, the error message also begins with a session_id line, and the session may still be revised."),
 		mcp.WithString("text", mcp.Required(), mcp.MinLength(1), mcp.Description("Text to rewrite.")),
 	), h.StartRewrite)
 
@@ -104,12 +106,12 @@ func (h *Handlers) StartRewrite(ctx context.Context, req mcp.CallToolRequest) (*
 	unlock := h.Store.Lock(sess.PublicID)
 	defer unlock()
 
-	prefix := fmt.Sprintf("session_id: %s\n\n", sess.PublicID)
-	current, message := h.run(ctx, sess, request, firstRunMessage, prefix)
+	sessionLine := fmt.Sprintf("session_id: %s\n", sess.PublicID)
+	current, message := h.run(ctx, sess, request, firstRunMessage, sessionLine+"\n")
 	if message != "" {
 		return mcp.NewToolResultError(message), nil
 	}
-	return mcp.NewToolResultText(prefix + current), nil
+	return mcp.NewToolResultText(sessionLine + ReviewReminder + "\n\n" + current), nil
 }
 
 func (h *Handlers) ReviseRewrite(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

@@ -95,8 +95,8 @@ func newHandlers(t *testing.T, runner AgentRunner) *Handlers {
 
 func sessionID(t *testing.T, body string) string {
 	t.Helper()
-	header, _, _ := strings.Cut(body, "\n\n")
-	id := strings.TrimPrefix(header, "session_id: ")
+	firstLine, _, _ := strings.Cut(body, "\n")
+	id := strings.TrimPrefix(firstLine, "session_id: ")
 	if !session.IDPattern.MatchString(id) {
 		t.Fatalf("body = %q", body)
 	}
@@ -167,7 +167,7 @@ func TestStartAndRevise(t *testing.T) {
 	}
 	body := text(t, res)
 	id := sessionID(t, body)
-	if _, rest, _ := strings.Cut(body, "\n\n"); rest != "rewritten" {
+	if body != "session_id: "+id+"\n"+ReviewReminder+"\n\nrewritten" {
 		t.Fatalf("body = %q", body)
 	}
 	if runner.calls[0] != "Rewrite CURRENT.txt." || runner.prompts[0] != "config prompt" {

@@ -18,6 +18,7 @@ import (
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/zachahn/squiggly/internal/mcpserver"
 	"github.com/zachahn/squiggly/internal/session"
 )
 
@@ -113,8 +114,12 @@ func TestMCPEndToEnd(t *testing.T) {
 	var initReq mcp.InitializeRequest
 	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
 	initReq.Params.ClientInfo = mcp.Implementation{Name: "test", Version: "0"}
-	if _, err := c.Initialize(ctx, initReq); err != nil {
+	initResult, err := c.Initialize(ctx, initReq)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if initResult.Instructions != mcpserver.Instructions {
+		t.Errorf("instructions = %q", initResult.Instructions)
 	}
 
 	tools, err := c.ListTools(ctx, mcp.ListToolsRequest{})
@@ -140,8 +145,9 @@ func TestMCPEndToEnd(t *testing.T) {
 		t.Fatal(callText(t, res))
 	}
 	header, body, _ := strings.Cut(callText(t, res), "\n\n")
-	id := strings.TrimPrefix(header, "session_id: ")
-	if len(id) != 8 || body != "We use tools." {
+	sessionLine, reminder, _ := strings.Cut(header, "\n")
+	id := strings.TrimPrefix(sessionLine, "session_id: ")
+	if len(id) != 8 || reminder != mcpserver.ReviewReminder || body != "We use tools." {
 		t.Fatalf("start result = %q", callText(t, res))
 	}
 	if fake.auth[0] != "Bearer sk-test" {

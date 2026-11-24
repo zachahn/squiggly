@@ -130,6 +130,12 @@ After the config is loaded, the database MUST be opened and migrated as describe
 
 The server MUST communicate over stdio only.
 
+The `initialize` response MUST include these server instructions:
+
+```
+Rewrite prose using Squiggly through a back-and-forth with a rewriting agent. A single `start_rewrite` call results in an initial draft, not a final result. Compare each draft to your original text and your intent for missing details, altered meaning, incorrect tone, or unwanted additions. Use `revise_rewrite` with specific feedback and repeat until the draft is right. Accept a draft without revision only if it has no remaining issues.
+```
+
 ### 4.2. Tool: `start_rewrite`
 
 **Parameters:**
@@ -150,9 +156,12 @@ The server MUST communicate over stdio only.
 
    ```
    session_id: <public_id>
+   Review this draft against your original text and call revise_rewrite with specific feedback until the draft is right.
 
    <contents of CURRENT.txt>
    ```
+
+   Everything after the first blank line is the contents of `CURRENT.txt`.
 
 5. On failure, the session MUST be kept, and the tool error message MUST be:
 
