@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"sync"
 
-	"github.com/zachahn/editor/internal/session"
+	"github.com/zachahn/squiggly/internal/session"
 )
 
 var allowedName = regexp.MustCompile(`\A(ORIGINAL\.txt|CURRENT\.txt|SCRATCH-[0-9]+\.txt)\z`)

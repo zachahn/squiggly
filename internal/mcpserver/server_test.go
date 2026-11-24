@@ -13,8 +13,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/zachahn/editor/internal/agent"
-	"github.com/zachahn/editor/internal/session"
+	"github.com/zachahn/squiggly/internal/agent"
+	"github.com/zachahn/squiggly/internal/session"
 )
 
 type fakeRunner struct {

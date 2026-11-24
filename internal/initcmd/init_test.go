@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zachahn/editor/internal/config"
+	"github.com/zachahn/squiggly/internal/config"
 )
 
 func runInit(t *testing.T, path, input string) (string, error) {
@@ -44,7 +44,7 @@ func TestNewConfigWithModelPickList(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	path := filepath.Join(t.TempDir(), "editor", "config.toml")
+	path := filepath.Join(t.TempDir(), "squiggly", "config.toml")
 	out, err := runInit(t, path, "3\n\n"+srv.URL+"/v1\nsk-test\n0\n2\n")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)

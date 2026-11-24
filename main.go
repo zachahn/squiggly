@@ -12,18 +12,18 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"golang.org/x/term"
 
-	"github.com/zachahn/editor/internal/agent"
-	"github.com/zachahn/editor/internal/config"
-	"github.com/zachahn/editor/internal/initcmd"
-	"github.com/zachahn/editor/internal/mcpserver"
-	"github.com/zachahn/editor/internal/prune"
-	"github.com/zachahn/editor/internal/session"
+	"github.com/zachahn/squiggly/internal/agent"
+	"github.com/zachahn/squiggly/internal/config"
+	"github.com/zachahn/squiggly/internal/initcmd"
+	"github.com/zachahn/squiggly/internal/mcpserver"
+	"github.com/zachahn/squiggly/internal/prune"
+	"github.com/zachahn/squiggly/internal/session"
 )
 
 const usage = `Usage:
-  editor init                            Interactively create or update the config file.
-  editor mcp                             Run the MCP server over stdio.
-  editor prune --older-than <duration>   Delete sessions inactive for longer than a given age.
+  squiggly init                            Interactively create or update the config file.
+  squiggly mcp                             Run the MCP server over stdio.
+  squiggly prune --older-than <duration>   Delete sessions inactive for longer than a given age.
 `
 
 func main() {
@@ -46,18 +46,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stdout, usage)
 		return 0
 	}
-	fmt.Fprintf(stderr, "editor: unknown command %q\n\n%s", args[0], usage)
+	fmt.Fprintf(stderr, "squiggly: unknown command %q\n\n%s", args[0], usage)
 	return 2
 }
 
 func runInit(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
-		fmt.Fprintf(stderr, "editor init: unexpected arguments; all values are collected through interactive prompts\n")
+		fmt.Fprintf(stderr, "squiggly init: unexpected arguments; all values are collected through interactive prompts\n")
 		return 2
 	}
 	path, err := config.Path()
 	if err != nil {
-		fmt.Fprintf(stderr, "editor init: %v\n", err)
+		fmt.Fprintf(stderr, "squiggly init: %v\n", err)
 		return 1
 	}
 	stdinFD := int(os.Stdin.Fd())
@@ -72,7 +72,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		Path: path,
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "editor init: %v\n", err)
+		fmt.Fprintf(stderr, "squiggly init: %v\n", err)
 		return 1
 	}
 	return 0
@@ -80,32 +80,32 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 
 func runMCP(args []string, stderr io.Writer) int {
 	if len(args) > 0 {
-		fmt.Fprintf(stderr, "editor mcp: unexpected arguments\n")
+		fmt.Fprintf(stderr, "squiggly mcp: unexpected arguments\n")
 		return 2
 	}
 	path, err := config.Path()
 	if err != nil {
-		fmt.Fprintf(stderr, "editor mcp: %v\n", err)
+		fmt.Fprintf(stderr, "squiggly mcp: %v\n", err)
 		return 1
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
-		fmt.Fprintf(stderr, "editor mcp: %v\nRun `editor init` to create a valid config file.\n", err)
+		fmt.Fprintf(stderr, "squiggly mcp: %v\nRun `squiggly init` to create a valid config file.\n", err)
 		return 1
 	}
 	dbPath, err := session.DBPath()
 	if err != nil {
-		fmt.Fprintf(stderr, "editor mcp: %v\n", err)
+		fmt.Fprintf(stderr, "squiggly mcp: %v\n", err)
 		return 1
 	}
 	chatModel, err := agent.NewChatModel(context.Background(), cfg)
 	if err != nil {
-		fmt.Fprintf(stderr, "editor mcp: create chat model: %v\nRun `editor init` to create a valid config file.\n", err)
+		fmt.Fprintf(stderr, "squiggly mcp: create chat model: %v\nRun `squiggly init` to create a valid config file.\n", err)
 		return 1
 	}
 	db, err := session.Open(context.Background(), dbPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "editor mcp: %v\n", err)
+		fmt.Fprintf(stderr, "squiggly mcp: %v\n", err)
 		return 1
 	}
 	defer db.Close()
@@ -122,7 +122,7 @@ func runMCP(args []string, stderr io.Writer) int {
 		SystemPrompt: cfg.SystemPrompt,
 	})
 	if err := server.ServeStdio(srv); err != nil && !errors.Is(err, context.Canceled) {
-		fmt.Fprintf(stderr, "editor mcp: %v\n", err)
+		fmt.Fprintf(stderr, "squiggly mcp: %v\n", err)
 		return 1
 	}
 	return 0
@@ -136,21 +136,21 @@ func runPrune(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *olderThan == "" || flags.NArg() > 0 {
-		fmt.Fprintf(stderr, "Usage: editor prune --older-than <duration>\n")
+		fmt.Fprintf(stderr, "Usage: squiggly prune --older-than <duration>\n")
 		return 2
 	}
 	duration, err := prune.ParseDuration(*olderThan)
 	if err != nil {
-		fmt.Fprintf(stderr, "editor prune: %v\n", err)
+		fmt.Fprintf(stderr, "squiggly prune: %v\n", err)
 		return 2
 	}
 	dbPath, err := session.DBPath()
 	if err != nil {
-		fmt.Fprintf(stderr, "editor prune: %v\n", err)
+		fmt.Fprintf(stderr, "squiggly prune: %v\n", err)
 		return 1
 	}
 	if err := prune.Run(context.Background(), dbPath, duration, time.Now(), stdout); err != nil {
-		fmt.Fprintf(stderr, "editor prune: %v\n", err)
+		fmt.Fprintf(stderr, "squiggly prune: %v\n", err)
 		return 1
 	}
 	return 0

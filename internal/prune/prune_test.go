@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zachahn/editor/internal/session"
+	"github.com/zachahn/squiggly/internal/session"
 )
 
 func TestParseDuration(t *testing.T) {

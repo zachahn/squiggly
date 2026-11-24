@@ -9,18 +9,18 @@ import (
 
 func TestPathUsesXDGConfigHome(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/xdg")
-	if got, _ := Path(); got != "/xdg/editor/config.toml" {
+	if got, _ := Path(); got != "/xdg/squiggly/config.toml" {
 		t.Fatalf("got %q", got)
 	}
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("HOME", "/home/u")
-	if got, _ := Path(); got != "/home/u/.config/editor/config.toml" {
+	if got, _ := Path(); got != "/home/u/.config/squiggly/config.toml" {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestWriteAndLoadRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "editor", "config.toml")
+	path := filepath.Join(t.TempDir(), "squiggly", "config.toml")
 	cfg := &Config{
 		Platform:              PlatformOpenAICompatible,
 		BaseURL:               "https://example.com/v1",

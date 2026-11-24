@@ -59,13 +59,13 @@ type fileConfig struct {
 
 func Dir() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "editor"), nil
+		return filepath.Join(xdg, "squiggly"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("locate home directory: %w", err)
 	}
-	return filepath.Join(home, ".config", "editor"), nil
+	return filepath.Join(home, ".config", "squiggly"), nil
 }
 
 func Path() (string, error) {

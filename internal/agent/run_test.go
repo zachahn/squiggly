@@ -15,8 +15,8 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/zachahn/editor/internal/config"
-	"github.com/zachahn/editor/internal/session"
+	"github.com/zachahn/squiggly/internal/config"
+	"github.com/zachahn/squiggly/internal/session"
 )
 
 type scriptedModel struct {

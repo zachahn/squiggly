@@ -18,8 +18,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 	ub "github.com/cloudwego/eino/utils/callbacks"
 
-	"github.com/zachahn/editor/internal/config"
-	"github.com/zachahn/editor/internal/session"
+	"github.com/zachahn/squiggly/internal/config"
+	"github.com/zachahn/squiggly/internal/session"
 )
 
 const Preamble = `You are rewriting text inside a sandboxed session. The session consists of the files ORIGINAL.txt, CURRENT.txt, and any SCRATCH-<n>.txt files (for example SCRATCH-1.txt).

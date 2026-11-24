@@ -84,13 +84,13 @@ CREATE INDEX messages_request_id ON messages(request_id);`,
 
 func DBPath() (string, error) {
 	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "editor", "sessions.db"), nil
+		return filepath.Join(xdg, "squiggly", "sessions.db"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("locate home directory: %w", err)
 	}
-	return filepath.Join(home, ".local", "state", "editor", "sessions.db"), nil
+	return filepath.Join(home, ".local", "state", "squiggly", "sessions.db"), nil
 }
 
 func DBExists(path string) (bool, error) {

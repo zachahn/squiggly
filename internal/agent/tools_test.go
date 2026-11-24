@@ -8,7 +8,7 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 
-	"github.com/zachahn/editor/internal/session"
+	"github.com/zachahn/squiggly/internal/session"
 )
 
 func invoke(t *testing.T, tools []tool.BaseTool, name string, args map[string]any) string {

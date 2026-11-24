@@ -1,4 +1,4 @@
-module github.com/zachahn/editor
+module github.com/zachahn/squiggly
 
 go 1.27.4
 

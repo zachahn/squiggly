@@ -10,8 +10,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/zachahn/editor/internal/agent"
-	"github.com/zachahn/editor/internal/session"
+	"github.com/zachahn/squiggly/internal/agent"
+	"github.com/zachahn/squiggly/internal/session"
 )
 
 const (
@@ -30,7 +30,7 @@ type Handlers struct {
 }
 
 func New(h *Handlers) *server.MCPServer {
-	s := server.NewMCPServer("editor", Version, server.WithToolCapabilities(false), server.WithRecovery())
+	s := server.NewMCPServer("squiggly", Version, server.WithToolCapabilities(false), server.WithRecovery())
 
 	s.AddTool(mcp.NewTool(session.ToolStartRewrite,
 		mcp.WithDescription("Start a rewriting session. The text is rewritten by an LLM agent. The result begins with a session_id line, followed by a blank line and the rewritten text. Pass the session_id to revise_rewrite to request revisions. When the run fails, the error message also begins with a session_id line, and the session may still be revised."),

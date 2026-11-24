@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zachahn/editor/internal/config"
+	"github.com/zachahn/squiggly/internal/config"
 )
 
-var ErrNotTerminal = errors.New("editor init is interactive and requires stdin to be a terminal")
+var ErrNotTerminal = errors.New("squiggly init is interactive and requires stdin to be a terminal")
 
 var defaultBaseURLs = map[string]string{
 	config.PlatformOllama:   "http://localhost:11434",

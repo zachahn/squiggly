@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zachahn/editor/internal/session"
+	"github.com/zachahn/squiggly/internal/session"
 )
 
 var dayComponent = regexp.MustCompile(`([0-9]*\.?[0-9]+)d`)

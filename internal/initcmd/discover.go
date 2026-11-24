@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zachahn/editor/internal/config"
+	"github.com/zachahn/squiggly/internal/config"
 )
 
 const discoveryTimeout = 15 * time.Second

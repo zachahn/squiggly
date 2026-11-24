@@ -14,7 +14,7 @@ var testSettings = RequestSettings{Platform: "llamacpp", Model: "m", MaxSteps: 3
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := Open(context.Background(), filepath.Join(t.TempDir(), "state", "editor", "sessions.db"))
+	db, err := Open(context.Background(), filepath.Join(t.TempDir(), "state", "squiggly", "sessions.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,18 +30,18 @@ func newTestStore(t *testing.T) *Store {
 
 func TestDBPathUsesXDGStateHome(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "/state")
-	if got, _ := DBPath(); got != "/state/editor/sessions.db" {
+	if got, _ := DBPath(); got != "/state/squiggly/sessions.db" {
 		t.Fatalf("got %q", got)
 	}
 	t.Setenv("XDG_STATE_HOME", "")
 	t.Setenv("HOME", "/home/u")
-	if got, _ := DBPath(); got != "/home/u/.local/state/editor/sessions.db" {
+	if got, _ := DBPath(); got != "/home/u/.local/state/squiggly/sessions.db" {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestOpenSetsModesPragmasAndSchema(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "with space", "editor")
+	dir := filepath.Join(t.TempDir(), "with space", "squiggly")
 	path := filepath.Join(dir, "sessions.db")
 	db, err := Open(context.Background(), path)
 	if err != nil {

@@ -18,12 +18,12 @@ import (
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/zachahn/editor/internal/session"
+	"github.com/zachahn/squiggly/internal/session"
 )
 
 func buildBinary(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "editor")
+	bin := filepath.Join(t.TempDir(), "squiggly")
 	out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput()
 	if err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
@@ -72,7 +72,7 @@ func toolCallReply(name, args string) map[string]any {
 
 func writeConfig(t *testing.T, configHome, body string) {
 	t.Helper()
-	dir := filepath.Join(configHome, "editor")
+	dir := filepath.Join(configHome, "squiggly")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestMCPEndToEnd(t *testing.T) {
 		t.Errorf("Authorization = %q", fake.auth[0])
 	}
 
-	dbPath := filepath.Join(stateHome, "editor", "sessions.db")
+	dbPath := filepath.Join(stateHome, "squiggly", "sessions.db")
 	if info, err := os.Stat(dbPath); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("database = %v, %v", info, err)
 	}
@@ -233,7 +233,7 @@ func TestMCPInvalidConfig(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	if err == nil || !strings.Contains(stderr.String(), "editor init") {
+	if err == nil || !strings.Contains(stderr.String(), "squiggly init") {
 		t.Fatalf("err = %v, stderr = %q", err, stderr.String())
 	}
 }

@@ -1,10 +1,10 @@
-# editor: LLM Rewriting CLI and MCP Server
+# squiggly: LLM Rewriting CLI and MCP Server
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 (RFC2119) (RFC8174) when, and only when, they appear in all capitals, as shown here.
 
 ## 1. Overview
 
-`editor` is a command-line program written in Go. Text is rewritten by an LLM, and the program is exposed to MCP clients as an MCP server over stdio.
+`squiggly` is a command-line program written in Go. Text is rewritten by an LLM, and the program is exposed to MCP clients as an MCP server over stdio.
 
 Rewriting is performed by an agent loop. The agent is given a sandboxed set of file tools scoped to a single session. Sessions and session files are stored in a SQLite database (Section 6). The original text is stored as `ORIGINAL.txt`, and the rewrite is produced in `CURRENT.txt`. A session is started with the original text and MAY be revised any number of times with feedback.
 
@@ -20,9 +20,9 @@ The program MUST be built with:
 
 | Command | Purpose |
 | --- | --- |
-| `editor init` | Interactively create or update the config file. |
-| `editor mcp` | Run the MCP server over stdio. |
-| `editor prune --older-than <duration>` | Delete sessions inactive for longer than a given age, together with their request logs. |
+| `squiggly init` | Interactively create or update the config file. |
+| `squiggly mcp` | Run the MCP server over stdio. |
+| `squiggly prune --older-than <duration>` | Delete sessions inactive for longer than a given age, together with their request logs. |
 
 ### 1.2. Supported Platforms
 
@@ -38,7 +38,7 @@ The configured model MUST support tool calling. For Ollama, only models with too
 
 ### 2.1. Location
 
-The config file MUST be located at `$XDG_CONFIG_HOME/editor/config.toml`. When `XDG_CONFIG_HOME` is unset or empty, `~/.config/editor/config.toml` MUST be used. This rule applies on every operating system, including macOS.
+The config file MUST be located at `$XDG_CONFIG_HOME/squiggly/config.toml`. When `XDG_CONFIG_HOME` is unset or empty, `~/.config/squiggly/config.toml` MUST be used. This rule applies on every operating system, including macOS.
 
 ### 2.2. Format
 
@@ -77,11 +77,11 @@ Rewrite the text for clarity and concision. Preserve the meaning, tone, and any 
 """
 ```
 
-## 3. `editor init`
+## 3. `squiggly init`
 
 ### 3.1. Interactivity
 
-`editor init` MUST collect all inputs through interactive prompts. No flags are defined for config values. When stdin is not a terminal, the command MUST exit with a non-zero status and an error message, without prompting.
+`squiggly init` MUST collect all inputs through interactive prompts. No flags are defined for config values. When stdin is not a terminal, the command MUST exit with a non-zero status and an error message, without prompting.
 
 ### 3.2. Existing Config
 
@@ -118,13 +118,13 @@ When the request fails or returns no models, the reason MUST be printed and the 
 
 After all prompts are answered, the config file MUST be written as described in Section 2. For a new config, `system_prompt` MUST be set to the default in Section 5.1, `max_steps` MUST be set to 25, and `request_timeout_seconds` MUST be set to 600. The path of the written file MUST be printed.
 
-## 4. `editor mcp`
+## 4. `squiggly mcp`
 
 ### 4.1. Startup
 
 The config MUST be read once at startup and MUST NOT be read again during the life of the process. Edits to the config file take effect only after the server is restarted.
 
-When the config file is missing or invalid (unparseable, unknown `platform`, empty `base_url`, empty `model`, empty `system_prompt`, `max_steps` below 1, or `request_timeout_seconds` below 1), the process MUST exit with a non-zero status and an error message on stderr that suggests running `editor init`.
+When the config file is missing or invalid (unparseable, unknown `platform`, empty `base_url`, empty `model`, empty `system_prompt`, `max_steps` below 1, or `request_timeout_seconds` below 1), the process MUST exit with a non-zero status and an error message on stderr that suggests running `squiggly init`.
 
 After the config is loaded, the database MUST be opened and migrated as described in Section 6. When the database cannot be opened or migrated, the process MUST exit with a non-zero status and an error message on stderr.
 
@@ -204,9 +204,9 @@ All failures MUST be returned as MCP tool errors (`isError: true`) with a readab
 
 ### 4.5. Concurrency
 
-Calls on the same session MUST be serialized by a per-session mutex, keyed by public ID and held within the `editor mcp` process. A second call on a busy session MUST wait until the first finishes. Calls on different sessions MAY run in parallel.
+Calls on the same session MUST be serialized by a per-session mutex, keyed by public ID and held within the `squiggly mcp` process. A second call on a busy session MUST wait until the first finishes. Calls on different sessions MAY run in parallel.
 
-Several `editor mcp` processes MAY share the database. Calls on the same session from different processes are not serialized. Instead, the session `version` read at the start of a run MUST be compared at commit (Section 7.3). When the version has changed, the commit MUST be refused, and a tool error MUST be returned stating that the session was revised by another process during the run.
+Several `squiggly mcp` processes MAY share the database. Calls on the same session from different processes are not serialized. Instead, the session `version` read at the start of a run MUST be compared at commit (Section 7.3). When the version has changed, the commit MUST be refused, and a tool error MUST be returned stating that the session was revised by another process during the run.
 
 ## 5. Agent Run
 
@@ -223,7 +223,7 @@ The built-in preamble is fixed in the binary and MUST state that:
 - All text replies are dropped. Only the contents of `CURRENT.txt` are returned.
 - The run ends when a reply is given without a tool call.
 
-The default `system_prompt` written by `editor init` MUST be:
+The default `system_prompt` written by `squiggly init` MUST be:
 
 ```
 Rewrite the text for clarity and concision. Preserve the meaning, tone, and any technical details. Do not add new information. Do not imagine a scenario; restate factually.
@@ -264,15 +264,13 @@ The agent's final text reply MUST NOT be returned to the MCP client. The reply i
 
 ### 6.1. Location
 
-All state MUST be stored in a single SQLite database at `$XDG_STATE_HOME/editor/sessions.db`. When `XDG_STATE_HOME` is unset or empty, `~/.local/state/editor/sessions.db` MUST be used.
+All state MUST be stored in a single SQLite database at `$XDG_STATE_HOME/squiggly/sessions.db`. When `XDG_STATE_HOME` is unset or empty, `~/.local/state/squiggly/sessions.db` MUST be used.
 
 The directory MUST be created with mode `0700` when absent. The database file MUST have mode `0600`, because session text is stored in the database.
 
 Each connection MUST enable `journal_mode=WAL`, `foreign_keys=ON`, and a `busy_timeout` of at least 5000 milliseconds.
 
 All timestamps MUST be stored as integer Unix milliseconds. Booleans MUST be stored as integer 0 or 1.
-
-Session directories from earlier versions, under `$XDG_STATE_HOME/editor/sessions/`, MUST be ignored. They are neither read nor deleted.
 
 ### 6.2. Schema
 
@@ -370,7 +368,7 @@ The history of a file is the file's versions in `id` order. The request that pro
 
 ### 6.7. Retention
 
-Sessions MUST NOT be deleted automatically. Sessions are deleted only by `editor prune` (Section 8).
+Sessions MUST NOT be deleted automatically. Sessions are deleted only by `squiggly prune` (Section 8).
 
 ## 7. Agent Tools
 
@@ -433,7 +431,7 @@ Replaces the single occurrence of `old_string` in `name` with `new_string`.
 
 Searches with a Go RE2 regular expression. When `name` is given, only that file is searched. Otherwise every file in the session is searched. Matches MUST be returned one per line as `name:line:text`, with 1-based line numbers. An invalid pattern MUST be reported as an error result.
 
-## 8. `editor prune`
+## 8. `squiggly prune`
 
 ### 8.1. Arguments
 
