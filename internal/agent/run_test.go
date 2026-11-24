@@ -16,6 +16,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/zachahn/squiggly/internal/config"
+	"github.com/zachahn/squiggly/internal/prose"
 	"github.com/zachahn/squiggly/internal/session"
 )
 
@@ -106,7 +107,7 @@ func TestRunReturnsOverlayChanges(t *testing.T) {
 		t.Fatal("base snapshot was modified")
 	}
 	system := m.requests[0][0]
-	if system.Role != schema.System || !strings.HasPrefix(system.Content, Preamble) || !strings.HasSuffix(system.Content, "be concise") {
+	if system.Role != schema.System || !strings.HasPrefix(system.Content, prose.AgentPreamble) || !strings.HasSuffix(system.Content, "be concise") {
 		t.Fatalf("system message = %q", system.Content)
 	}
 	if m.requests[0][1].Content != "Rewrite CURRENT.txt." {

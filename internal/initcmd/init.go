@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/zachahn/squiggly/internal/config"
+	"github.com/zachahn/squiggly/internal/prose"
 )
 
 var ErrNotTerminal = errors.New("squiggly init is interactive and requires stdin to be a terminal")
@@ -201,7 +202,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	cfg := &config.Config{
-		SystemPrompt:          config.DefaultSystemPrompt,
+		SystemPrompt:          prose.DefaultSystemPrompt,
 		MaxSteps:              config.DefaultMaxSteps,
 		RequestTimeoutSeconds: config.DefaultRequestTimeoutSeconds,
 	}

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/zachahn/squiggly/internal/config"
+	"github.com/zachahn/squiggly/internal/prose"
 )
 
 func runInit(t *testing.T, path, input string) (string, error) {
@@ -59,7 +60,7 @@ func TestNewConfigWithModelPickList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := config.Config{Platform: "openai-compatible", BaseURL: srv.URL + "/v1", APIKey: "sk-test", Model: "beta", MaxSteps: 25, RequestTimeoutSeconds: 600, SystemPrompt: config.DefaultSystemPrompt}
+	want := config.Config{Platform: "openai-compatible", BaseURL: srv.URL + "/v1", APIKey: "sk-test", Model: "beta", MaxSteps: 25, RequestTimeoutSeconds: 600, SystemPrompt: prose.DefaultSystemPrompt}
 	if *cfg != want {
 		t.Fatalf("cfg = %+v", cfg)
 	}
@@ -165,7 +166,7 @@ func TestUnparseableExistingConfigUsesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.SystemPrompt != config.DefaultSystemPrompt || cfg.MaxSteps != 25 || cfg.RequestTimeoutSeconds != 600 {
+	if cfg.SystemPrompt != prose.DefaultSystemPrompt || cfg.MaxSteps != 25 || cfg.RequestTimeoutSeconds != 600 {
 		t.Fatalf("cfg = %+v", cfg)
 	}
 }

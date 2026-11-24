@@ -11,15 +11,11 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/zachahn/squiggly/internal/agent"
+	"github.com/zachahn/squiggly/internal/prose"
 	"github.com/zachahn/squiggly/internal/session"
 )
 
-const (
-	firstRunMessage = "Rewrite CURRENT.txt."
-	Version         = "0.1.0"
-	Instructions    = "Rewrite prose using Squiggly through a back-and-forth with a rewriting agent. A single `start_rewrite` call produces an initial draft, not a final result. Compare each draft to your original text and your intent for missing details, altered meaning, incorrect tone, or unwanted additions. Use `revise_rewrite` with specific feedback and repeat until the draft is satisfactory. Accept a draft without revision only if no issues remain."
-	ReviewReminder  = "Compare this draft with the original text and call revise_rewrite with specific feedback until the draft is satisfactory."
-)
+const Version = "0.1.0"
 
 type AgentRunner interface {
 	Run(ctx context.Context, in agent.RunInput) (*agent.RunResult, error)
@@ -32,17 +28,17 @@ type Handlers struct {
 }
 
 func New(h *Handlers) *server.MCPServer {
-	s := server.NewMCPServer("squiggly", Version, server.WithToolCapabilities(false), server.WithRecovery(), server.WithInstructions(Instructions))
+	s := server.NewMCPServer("squiggly", Version, server.WithToolCapabilities(false), server.WithRecovery(), server.WithInstructions(prose.ServerInstructions))
 
 	s.AddTool(mcp.NewTool(session.ToolStartRewrite,
-		mcp.WithDescription("Start a rewriting session. The text is rewritten by an LLM agent into an initial draft, not a final result. The result begins with a session_id line and a review reminder line, followed by a blank line and the draft. Review the draft against the original text, and pass the session_id to revise_rewrite with feedback until the draft is right. When the run fails, the error message also begins with a session_id line, and the session may still be revised."),
-		mcp.WithString("text", mcp.Required(), mcp.MinLength(1), mcp.Description("Text to rewrite.")),
+		mcp.WithDescription(prose.StartRewriteDescription),
+		mcp.WithString("text", mcp.Required(), mcp.MinLength(1), mcp.Description(prose.StartRewriteTextDescription)),
 	), h.StartRewrite)
 
 	s.AddTool(mcp.NewTool(session.ToolReviseRewrite,
-		mcp.WithDescription("Revise the rewrite of an existing session with feedback. The result contains only the revised text."),
-		mcp.WithString("session_id", mcp.Required(), mcp.Pattern(`^[0-9a-f]{8}$`), mcp.Description("Session ID returned by start_rewrite.")),
-		mcp.WithString("feedback", mcp.Required(), mcp.MinLength(1), mcp.Description("Feedback on the current rewrite.")),
+		mcp.WithDescription(prose.ReviseRewriteDescription),
+		mcp.WithString("session_id", mcp.Required(), mcp.Pattern(`^[0-9a-f]{8}$`), mcp.Description(prose.ReviseRewriteSessionIDDescription)),
+		mcp.WithString("feedback", mcp.Required(), mcp.MinLength(1), mcp.Description(prose.ReviseRewriteFeedbackDescription)),
 	), h.ReviseRewrite)
 
 	return s
@@ -107,11 +103,11 @@ func (h *Handlers) StartRewrite(ctx context.Context, req mcp.CallToolRequest) (*
 	defer unlock()
 
 	sessionLine := fmt.Sprintf("session_id: %s\n", sess.PublicID)
-	current, message := h.run(ctx, sess, request, firstRunMessage, sessionLine+"\n")
+	current, message := h.run(ctx, sess, request, prose.FirstRunMessage, sessionLine+"\n")
 	if message != "" {
 		return mcp.NewToolResultError(message), nil
 	}
-	return mcp.NewToolResultText(sessionLine + ReviewReminder + "\n\n" + current), nil
+	return mcp.NewToolResultText(sessionLine + prose.ReviewReminder + "\n\n" + current), nil
 }
 
 func (h *Handlers) ReviseRewrite(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -141,7 +137,7 @@ func (h *Handlers) ReviseRewrite(ctx context.Context, req mcp.CallToolRequest) (
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	current, message := h.run(ctx, sess, request, "Feedback on CURRENT.txt:\n\n"+feedback, "")
+	current, message := h.run(ctx, sess, request, prose.FeedbackPrefix+feedback, "")
 	if message != "" {
 		return mcp.NewToolResultError(message), nil
 	}

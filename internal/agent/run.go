@@ -19,22 +19,9 @@ import (
 	ub "github.com/cloudwego/eino/utils/callbacks"
 
 	"github.com/zachahn/squiggly/internal/config"
+	"github.com/zachahn/squiggly/internal/prose"
 	"github.com/zachahn/squiggly/internal/session"
 )
-
-const Preamble = `You rewrite text in a sandboxed session consisting of ORIGINAL.txt, CURRENT.txt, and any SCRATCH-<n>.txt files (e.g., SCRATCH-1.txt).
-
-- ORIGINAL.txt: Read-only; contains the original text.
-- CURRENT.txt: Contains the working rewrite; the final rewrite MUST be left in CURRENT.txt.
-- SCRATCH-<n>.txt: Files that may be created for notes; they persist across session revisions.
-- All text replies are discarded; only the contents of CURRENT.txt are returned.
-- The run ends when a reply is provided without a tool call.
-
-Use list_files, read_file, write_file, edit_file, and grep to manage these files. Read CURRENT.txt before making changes.
-
-The rewriting instructions follow.
-
-`
 
 func NewChatModel(ctx context.Context, cfg *config.Config) (model.ToolCallingChatModel, error) {
 	timeout := cfg.RequestTimeout()
@@ -123,7 +110,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (*RunResult, error) {
 	}
 
 	messages := []*schema.Message{
-		schema.SystemMessage(Preamble + in.SystemPrompt),
+		schema.SystemMessage(prose.AgentPreamble + in.SystemPrompt),
 		schema.UserMessage(in.UserMessage),
 	}
 	for _, msg := range messages {

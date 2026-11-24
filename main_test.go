@@ -18,7 +18,7 @@ import (
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/zachahn/squiggly/internal/mcpserver"
+	"github.com/zachahn/squiggly/internal/prose"
 	"github.com/zachahn/squiggly/internal/session"
 )
 
@@ -118,7 +118,7 @@ func TestMCPEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if initResult.Instructions != mcpserver.Instructions {
+	if initResult.Instructions != prose.ServerInstructions {
 		t.Errorf("instructions = %q", initResult.Instructions)
 	}
 
@@ -147,7 +147,7 @@ func TestMCPEndToEnd(t *testing.T) {
 	header, body, _ := strings.Cut(callText(t, res), "\n\n")
 	sessionLine, reminder, _ := strings.Cut(header, "\n")
 	id := strings.TrimPrefix(sessionLine, "session_id: ")
-	if len(id) != 8 || reminder != mcpserver.ReviewReminder || body != "We use tools." {
+	if len(id) != 8 || reminder != prose.ReviewReminder || body != "We use tools." {
 		t.Fatalf("start result = %q", callText(t, res))
 	}
 	if fake.auth[0] != "Bearer sk-test" {

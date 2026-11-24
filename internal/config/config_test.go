@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/zachahn/squiggly/internal/prose"
 )
 
 func TestPathUsesXDGConfigHome(t *testing.T) {
@@ -28,7 +30,7 @@ func TestWriteAndLoadRoundTrip(t *testing.T) {
 		Model:                 "m",
 		MaxSteps:              25,
 		RequestTimeoutSeconds: 900,
-		SystemPrompt:          DefaultSystemPrompt,
+		SystemPrompt:          prose.DefaultSystemPrompt,
 	}
 	if err := Write(path, cfg); err != nil {
 		t.Fatal(err)

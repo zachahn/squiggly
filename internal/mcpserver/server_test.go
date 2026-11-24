@@ -14,6 +14,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/zachahn/squiggly/internal/agent"
+	"github.com/zachahn/squiggly/internal/prose"
 	"github.com/zachahn/squiggly/internal/session"
 )
 
@@ -167,7 +168,7 @@ func TestStartAndRevise(t *testing.T) {
 	}
 	body := text(t, res)
 	id := sessionID(t, body)
-	if body != "session_id: "+id+"\n"+ReviewReminder+"\n\nrewritten" {
+	if body != "session_id: "+id+"\n"+prose.ReviewReminder+"\n\nrewritten" {
 		t.Fatalf("body = %q", body)
 	}
 	if runner.calls[0] != "Rewrite CURRENT.txt." || runner.prompts[0] != "config prompt" {

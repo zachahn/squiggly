@@ -16,15 +16,10 @@ import (
 	"github.com/zachahn/squiggly/internal/config"
 	"github.com/zachahn/squiggly/internal/initcmd"
 	"github.com/zachahn/squiggly/internal/mcpserver"
+	"github.com/zachahn/squiggly/internal/prose"
 	"github.com/zachahn/squiggly/internal/prune"
 	"github.com/zachahn/squiggly/internal/session"
 )
-
-const usage = `Usage:
-  squiggly init                            Interactively create or update the config file.
-  squiggly mcp                             Run the MCP server over stdio.
-  squiggly prune --older-than <duration>   Delete sessions inactive for longer than the specified duration.
-`
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -32,7 +27,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
+		fmt.Fprint(stderr, prose.Usage)
 		return 2
 	}
 	switch args[0] {
@@ -43,10 +38,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "prune":
 		return runPrune(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
-		fmt.Fprint(stdout, usage)
+		fmt.Fprint(stdout, prose.Usage)
 		return 0
 	}
-	fmt.Fprintf(stderr, "squiggly: unknown command %q\n\n%s", args[0], usage)
+	fmt.Fprintf(stderr, "squiggly: unknown command %q\n\n%s", args[0], prose.Usage)
 	return 2
 }
 
@@ -131,12 +126,12 @@ func runMCP(args []string, stderr io.Writer) int {
 func runPrune(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("prune", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	olderThan := flags.String("older-than", "", "sessions inactive for longer than this duration are deleted (e.g., 30d, 12h, 90m)")
+	olderThan := flags.String("older-than", "", prose.OlderThanFlagDescription)
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 	if *olderThan == "" || flags.NArg() > 0 {
-		fmt.Fprintf(stderr, "Usage: squiggly prune --older-than <duration>\n")
+		fmt.Fprint(stderr, prose.PruneUsage)
 		return 2
 	}
 	duration, err := prune.ParseDuration(*olderThan)

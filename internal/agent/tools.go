@@ -10,6 +10,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/zachahn/squiggly/internal/prose"
 )
 
 type fileTool struct {
@@ -54,7 +56,7 @@ func requireString(value *string, field string) (string, error) {
 func nameParam() *schema.ParameterInfo {
 	return &schema.ParameterInfo{
 		Type:     schema.String,
-		Desc:     "File name: ORIGINAL.txt, CURRENT.txt, or SCRATCH-<n>.txt.",
+		Desc:     prose.FileNameParamDescription,
 		Required: true,
 	}
 }
@@ -73,7 +75,7 @@ func listFilesTool(overlay *Overlay) *fileTool {
 	return &fileTool{
 		info: &schema.ToolInfo{
 			Name: "list_files",
-			Desc: "List session files and their sizes in bytes, one per line.",
+			Desc: prose.ListFilesDescription,
 		},
 		run: func(json.RawMessage) (string, error) {
 			var b strings.Builder
@@ -93,7 +95,7 @@ func readFileTool(overlay *Overlay) *fileTool {
 	return &fileTool{
 		info: &schema.ToolInfo{
 			Name: "read_file",
-			Desc: "Return the full contents of a session file.",
+			Desc: prose.ReadFileDescription,
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"name": nameParam(),
 			}),
@@ -114,10 +116,10 @@ func writeFileTool(overlay *Overlay) *fileTool {
 	return &fileTool{
 		info: &schema.ToolInfo{
 			Name: "write_file",
-			Desc: "Replace the full contents of a session file. SCRATCH-<n>.txt files are created if absent. Read-only files, such as ORIGINAL.txt, cannot be written.",
+			Desc: prose.WriteFileDescription,
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"name":    nameParam(),
-				"content": {Type: schema.String, Desc: "New full contents of the file.", Required: true},
+				"content": {Type: schema.String, Desc: prose.WriteFileContentDescription, Required: true},
 			}),
 		},
 		run: func(raw json.RawMessage) (string, error) {
@@ -159,11 +161,11 @@ func editFileTool(overlay *Overlay) *fileTool {
 	return &fileTool{
 		info: &schema.ToolInfo{
 			Name: "edit_file",
-			Desc: "Replace a single occurrence of old_string in a session file with new_string. The edit fails if old_string is empty or does not occur exactly once. Read-only files, such as ORIGINAL.txt, cannot be edited.",
+			Desc: prose.EditFileDescription,
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"name":       nameParam(),
-				"old_string": {Type: schema.String, Desc: "Exact text to replace; must occur exactly once.", Required: true},
-				"new_string": {Type: schema.String, Desc: "Replacement text.", Required: true},
+				"old_string": {Type: schema.String, Desc: prose.EditFileOldStringDescription, Required: true},
+				"new_string": {Type: schema.String, Desc: prose.EditFileNewStringDescription, Required: true},
 			}),
 		},
 		run: func(raw json.RawMessage) (string, error) {
@@ -208,10 +210,10 @@ func grepTool(overlay *Overlay) *fileTool {
 	return &fileTool{
 		info: &schema.ToolInfo{
 			Name: "grep",
-			Desc: "Search session files using a Go RE2 regular expression. Return matches one per line as name:line:text with 1-based line numbers. Search all session files when name is omitted.",
+			Desc: prose.GrepDescription,
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"pattern": {Type: schema.String, Desc: "Go RE2 regular expression.", Required: true},
-				"name":    {Type: schema.String, Desc: "Optional file name to restrict the search."},
+				"pattern": {Type: schema.String, Desc: prose.GrepPatternDescription, Required: true},
+				"name":    {Type: schema.String, Desc: prose.GrepNameDescription},
 			}),
 		},
 		run: func(raw json.RawMessage) (string, error) {
