@@ -470,7 +470,7 @@ The row for a call that reaches an agent run MUST be inserted with status `runni
 | --- | --- |
 | `session_id` | The session's internal ID. NULL for rejected calls. |
 | `tool` | `start_rewrite` or `revise_rewrite`. |
-| `arguments` | The tool arguments as received, encoded as JSON. |
+| `arguments` | The tool arguments as received, encoded as JSON. For a `start_rewrite` call that creates a session, `text` MUST be omitted, because `text` is stored as the first version of `ORIGINAL.txt`. |
 | `status` | `running`, `ok`, or `error`. |
 | `error` | The tool error message when `status` is `error`. NULL otherwise. |
 | `platform`, `model` | From the config loaded at startup. |
