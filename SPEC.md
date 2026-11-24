@@ -148,7 +148,7 @@ Rewrite prose using Squiggly through a back-and-forth with a rewriting agent. A 
 The `instructions` parameter MUST be described to MCP clients as:
 
 ```
-Optional instructions for this rewrite, such as intended audience, target length, or terms that must be kept, are applied to the initial draft and all session revisions.
+Optional instructions for this rewrite, such as intended audience, target length, or required terminology, are applied to the initial draft and all session revisions.
 ```
 
 **Behavior:**
